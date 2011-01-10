@@ -24,6 +24,8 @@
 #include "clcontextloader.h"
 #include <boost/numeric/ublas/matrix.hpp>
 
+std::ostream& operator<<(std::ostream & os,const boost::numeric::ublas::matrix<float> & m);
+
 class Buffer2D {
 public:
 	enum WriteMode {
@@ -31,14 +33,25 @@ public:
 		ReadOnly = CL_MEM_READ_ONLY,
 		ReadWrite = CL_MEM_READ_WRITE
 	};
-	
+
 	Buffer2D(int w,int h,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),
 		m_data(CLContextLoader::getContext(),
-			   m,sizeof(double)*m_dimx*m_dimy) {}
+			   m,sizeof(float)*m_dimx*m_dimy) {}
 
-	Buffer2D(int w,int h,double * f,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),
+	Buffer2D(int w,int h,float * f,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),
 		m_data(CLContextLoader::getContext(),
-			   m | CL_MEM_COPY_HOST_PTR,sizeof(double)*m_dimx*m_dimy,f) {}
+			   m | CL_MEM_COPY_HOST_PTR,sizeof(float)*m_dimx*m_dimy,f) {}
+
+	Buffer2D(const Buffer2D & r) : m_dimx(r.m_dimx),m_dimy(r.m_dimy),m_data(r.m_data)
+	{
+	}
+
+	Buffer2D& operator=(const Buffer2D & r)
+	{
+		m_dimx = r.m_dimx;
+		m_dimy = r.m_dimy;
+		m_data = r.m_data;
+	}
 
 	static Buffer2D empty(int w,int h)
 	{
@@ -56,31 +69,28 @@ public:
 		return res;
 	}
 
-	operator boost::numeric::ublas::matrix<double>() const
+	operator boost::numeric::ublas::matrix<float>() const
 	{
-		boost::numeric::ublas::matrix<double> ans (m_dimx,m_dimy);
+		boost::numeric::ublas::matrix<float> ans (m_dimy,m_dimx);
 
 		CLContextLoader::getQueue().enqueueBarrier();
-		CLContextLoader::getQueue().enqueueReadBuffer(m_data,true,0,sizeof(double)*m_dimx*m_dimy, &ans.data()[0]);
+		CLContextLoader::getQueue().enqueueReadBuffer(m_data,true,0,sizeof(float)*m_dimx*m_dimy, &ans.data()[0]);
 		return ans;
 	}
 
 	struct buffer_2d {
-		int dimx;
-		int dimy;
+		cl_int dimx;
+		cl_int dimy;
 		cl_mem data;
 	};
 
-	buffer_2d operator()() const {
-		buffer_2d ans;
-		ans.dimx = m_dimx;
-		ans.dimy = m_dimy;
-		ans.data = m_data();
-		return ans;
+	cl_mem operator()() const {
+		return m_data();
 	}
 
 	int width() const {return m_dimx;}
 	int height() const {return m_dimy;}
+    cl_int2 size() const {return cl_int2 {m_dimx,m_dimy};}
 
 private:
 	int m_dimx;

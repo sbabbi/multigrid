@@ -35,12 +35,12 @@ public:
 	static cl::Program loadProgram(const char * filename) {return instance().loadProgramFromFile(filename);}
 
 protected:
-	
+
 	static CLContextLoader& instance() {
 		static CLContextLoader inst;
 		return inst;
 	}
-	
+
 	CLContextLoader();
 
 	cl::Program loadProgramFromFile(const char * filename);
