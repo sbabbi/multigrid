@@ -24,9 +24,9 @@
 
 class BorderHandler
 {
-	public:
-		virtual void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy) const = 0;
-	private:
+public:
+	virtual void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy) const = 0;
+private:
 };
 
 class MultigridSolver0
@@ -54,6 +54,7 @@ public:
 	void restrict(Buffer2D& res,const Buffer2D & input);
 	void correct_residual(Buffer2D & res,const Buffer2D & input,Buffer2D & residual);
 	void prolongate(Buffer2D & res,const Buffer2D & input);
+	void zero_mem(Buffer2D & res);
 
 private:
 	cl::Program m_theProgram;

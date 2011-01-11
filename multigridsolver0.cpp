@@ -50,23 +50,27 @@ Buffer2D MultigridSolver0::iterate(Buffer2D & in,
 	Buffer2D tmp (in.width(),in.height());
 
 	smoother_iterate(in,tmp,func,omega,a1);
-	if (in.width() > 3 && in.height() > 3) for (int i=0;i <v;++i)
+	if (in.width() > 3 && in.height() > 3)
 	{
-		//Compute residuals
-		compute_residuals(tmp,in,func);
-
-		//Restrict residuals
 		Buffer2D residuals ( in.width()/2+1,in.height()/2+1);
-		restrict(residuals,tmp);
+		Buffer2D i (residuals.width(),residuals.height());
+		for (int k=0;k <v;++k)
+		{
+			zero_mem(i);
+			//Compute residuals
+			compute_residuals(tmp,in,func);
 
-		//Solve residuals
-		Buffer2D i = Buffer2D::empty(residuals.width(),residuals.height());
-		i = iterate(i,residuals,omega,a1,a2,v);
+			//Restrict residuals
+			restrict(residuals,tmp);
 
-		//Prolungate residuals
-		correct_residual(tmp,in,i);
+			//Solve residuals
+			iterate(i,residuals,omega,max(a1/2,2),max(a2/2,2),v);
 
-		std::swap(in,tmp);
+			//Prolungate residuals
+			correct_residual(tmp,in,i);
+
+			std::swap(in,tmp);
+		}
 	}
 
 	//Post smooth
@@ -87,7 +91,8 @@ Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
 		int dimx = func.width();
 		int dimy = func.height();
 
-		Buffer2D x0 = Buffer2D::empty(dimx,dimy);
+		Buffer2D x0 (dimx,dimy);
+		zero_mem(x0);
 
 		return iterate(x0,func,omega,a1,a2,v);
 	}
@@ -194,4 +199,11 @@ void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
 
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_prolongationKernel,m_prolongationKernel,res.width(),res.height());
+}
+
+void MultigridSolver0::zero_mem(Buffer2D& res)
+{
+	CLContextLoader::getZeroMemKer().setArg(0,res());
+	m_queue.enqueueBarrier();
+	m_queue.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),cl::NDRange(0),cl::NDRange(res.width()*res.height()),cl::NDRange(1));
 }

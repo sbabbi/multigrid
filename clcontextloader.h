@@ -24,6 +24,7 @@
 #define __CL_ENABLE_EXCEPTIONS
 
 #include <CL/cl.hpp>
+#include <iostream>
 
 class CLContextLoader
 {
