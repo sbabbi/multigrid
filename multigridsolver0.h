@@ -56,6 +56,8 @@ public:
 	void prolongate(Buffer2D & res,const Buffer2D & input);
 	void zero_mem(Buffer2D & res);
 
+	void test_border(Buffer2D & res,cl::Buffer & bord);
+
 private:
 	cl::Program m_theProgram;
 
@@ -72,6 +74,8 @@ private:
 	cl::Kernel m_residualCorrectKernelBorder;
 
 	cl::Kernel m_prolongationKernel;
+
+	cl::Kernel m_testBorder;
 
 	cl::CommandQueue m_queue;
 

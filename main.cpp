@@ -7,6 +7,7 @@
 #include "clcontextloader.h"
 #include "buffer.h"
 #include "multigridsolver0.h"
+#include "borderdescriptor.h"
 
 using namespace std;
 
@@ -178,6 +179,11 @@ float prettyFunc1Sol(float x,float y)
 {
 	return (x*x-x*x*x*x)*(y*y*y*y-y*y);
 }
+float prettyFunc2(float x,float y)
+{
+	return sin(x+y);
+}
+float OppprettyFunc2(float x,float y) {return -2 * prettyFunc2(x,y);}
 
 enum SolverMode {Fmg = 0,Smooth = 1,Multigrid = 2};
 
@@ -240,7 +246,8 @@ int main(int argc,char ** argv)
 
 	try {
 		const int dimx = args[0], dimy = args[1];
-		FunctionTest testFunction(prettyFunc1,zeros,prettyFunc1Sol);
+// 		FunctionTest testFunction(prettyFunc1,zeros,prettyFunc1Sol);
+		FunctionTest testFunction(OppprettyFunc2,prettyFunc2,prettyFunc2);
 // 		FunctionTest testFunction(zeros,ones,ones);
 
 		Buffer2D f = testFunction.makeBuffer(dimx,dimy);
@@ -248,6 +255,16 @@ int main(int argc,char ** argv)
 		cout << "Solver\t\tTime\t\t\tL2Err\t\t\tLInfErr\t\t\tL2Res\t\t\tLinfRes\t\t\t" << endl;
 		RectangularBorderHandler borderHandler;
 		MultigridSolver0 s ("mg_0.cl",borderHandler);
+
+		Buffer2D test (32,32);
+		BorderDescriptor descr = BorderDescriptor::make_rectangle(5,5);
+		cl::Buffer bb = descr();
+		s.test_border(test,bb);
+
+		s.wait();
+
+		cout << test << endl;
+		return 0;
 
 		Buffer2D sol = solve(s,m,f,args[2],args[3],args[4],omega);
 

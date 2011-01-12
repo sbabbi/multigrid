@@ -33,6 +33,7 @@ MultigridSolver0::MultigridSolver0(const char* filename, const BorderHandler& ha
 	m_residualCorrectKernel(m_theProgram,"residual_correct_kernel"),
 	m_residualCorrectKernelBorder(m_theProgram,"residual_correct_kernel"),
 	m_prolongationKernel(m_theProgram,"prolongation_kernel"),
+	m_testBorder(m_theProgram,"test_border"),
 	m_queue( CLContextLoader::getContext(),CLContextLoader::getDevice(),CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE),
 	m_Handl(handl)
 {
@@ -206,4 +207,13 @@ void MultigridSolver0::zero_mem(Buffer2D& res)
 	CLContextLoader::getZeroMemKer().setArg(0,res());
 	m_queue.enqueueBarrier();
 	m_queue.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),cl::NDRange(0),cl::NDRange(res.width()*res.height()),cl::NDRange(1));
+}
+
+void MultigridSolver0::test_border(Buffer2D& res, cl::Buffer& bord)
+{
+	m_queue.enqueueBarrier();
+	m_testBorder.setArg(0,res());
+	m_testBorder.setArg(1,bord());
+	m_testBorder.setArg(2,res.size());
+	m_queue.enqueueNDRangeKernel(m_testBorder,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),cl::NDRange(4,4));
 }
