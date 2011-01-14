@@ -3,6 +3,7 @@
 #include <vector>
 #include <cassert>
 #include <iomanip>
+#include <map>
 
 #include "clcontextloader.h"
 #include "buffer.h"
@@ -24,21 +25,57 @@ std::ostream& operator<<(std::ostream & os,const boost::multi_array<float,2> & m
 class RectangularBorderHandler : public BorderHandler
 {
 public:
-	void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy) const
+	void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy)
 	{
 		//Top and bottom border
-		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(0,0),cl::NDRange(dimx-1,1),cl::NDRange(1,1));
-		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(1,dimy-1),cl::NDRange(dimx-1,1),cl::NDRange(1,1));
+// 		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(0,0),cl::NDRange(dimx-1,1),cl::NDRange(1,1));
+// 		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(1,dimy-1),cl::NDRange(dimx-1,1),cl::NDRange(1,1));
 
 		//Left and right borders
-		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(0,1),cl::NDRange(1,dimy-1),cl::NDRange(1,1));
-		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(dimx-1,0),cl::NDRange(1,dimy-1),cl::NDRange(1,1));
+// 		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(0,1),cl::NDRange(1,dimy-1),cl::NDRange(1,1));
+// 		queue.enqueueNDRangeKernel(borderKer,cl::NDRange(dimx-1,0),cl::NDRange(1,dimy-1),cl::NDRange(1,1));
+
+		if (bufMap.find( make_pair(dimx,dimy)) == bufMap.end())
+			construct(dimx,dimy);
+		cl::Buffer & buf = bufMap.at(make_pair(dimx,dimy));
 
 		//Enqueue inner ker
-		queue.enqueueNDRangeKernel(innerKer,cl::NDRange(1,1),cl::NDRange( (dimx-2),(dimy-2)),cl::NDRange(1,1));
+		innerKer.setArg(0,buf);
+		queue.enqueueNDRangeKernel(innerKer,cl::NDRange(0,0),cl::NDRange(dimx,dimy),cl::NDRange(1,1));
 		queue.enqueueBarrier();
 	}
+
+	void construct(int dimx,int dimy);
+
+private:
+	std::map< std::pair<int,int>, cl::Buffer> bufMap;
 };
+
+void RectangularBorderHandler::construct (int dimx,int dimy)
+{
+	boost::multi_array<cl_float2,2> f (boost::extents[dimy][dimx]);
+	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
+	{
+		cl_float2 val = {0,0};
+		f[j][i] = val;
+	}
+	for (int i=0;i < dimx;++i)
+	{
+		cl_float2 val1 = {0,1};
+		cl_float2 val2 = {0,-1};
+		f[0][i] = val1;
+		f[dimy-1][i] = val2;
+	}
+	for (int i=0;i < dimy;++i)
+	{
+		cl_float2 val1 = {1,0};
+		cl_float2 val2 = {-1,0};
+		f[i][0] = val1;
+		f[i][dimx-1] = val2;
+	}
+	cl::Buffer buf (CLContextLoader::getContext(),CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,sizeof(cl_float2)*dimx*dimy,f.data());
+	bufMap.insert(make_pair(make_pair(dimx,dimy),buf));
+}
 
 class FunctionTest
 {
@@ -74,7 +111,7 @@ Buffer2D FunctionTest::makeBuffer(int dimx, int dimy)
 	boost::multi_array<float,2> buf( boost::extents[dimy][dimx]);
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 		if (i == 0 || j == 0 || i == dimx-1 || j == dimy-1)
-			buf[j][i] = m_pBord( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
+			buf[j][i] = m_pBord( (float)(i)/(dimx-1), (float)(j)/(dimy-1) )*dx;
 		else
 			buf[j][i] = m_pFunc( (float)(i)/(dimx-1), (float)(j)/(dimy-1) )*dx*dx;
 
@@ -172,6 +209,7 @@ float prettyFunc2(float x,float y)
 }
 float OppprettyFunc2(float x,float y) {return -2 * prettyFunc2(x,y);}
 
+
 enum SolverMode {Fmg = 0,Smooth = 1,Multigrid = 2};
 
 Buffer2D solve(MultigridSolver0 & s,SolverMode m,const Buffer2D & f,int a1,int a2,int v,float omega = 1.0)
@@ -231,11 +269,11 @@ int main(int argc,char ** argv)
 	for (int i=0;i < 5;++i) args[i] = atoi(argv[2+i]);
 	omega = atof(argv[7]);
 
-	try {
+	/*try */{
 		const int dimx = args[0], dimy = args[1];
 // 		FunctionTest testFunction(prettyFunc1,zeros,prettyFunc1Sol);
-		FunctionTest testFunction(OppprettyFunc2,prettyFunc2,prettyFunc2);
-// 		FunctionTest testFunction(zeros,ones,ones);
+// 		FunctionTest testFunction(OppprettyFunc2,prettyFunc2,prettyFunc2);
+		FunctionTest testFunction(zeros,ones,ones);
 
 		Buffer2D f = testFunction.makeBuffer(dimx,dimy);
 
@@ -254,23 +292,23 @@ int main(int argc,char ** argv)
 			cout << testFunction.L2Norm(res) << "\t\t";
 			cout << testFunction.LInfNorm(res) << endl;
 
-// 			cout << res << endl;
-// 			cout << sol << endl;
+			cout << res << endl;
+			cout << sol << endl;
 // 			cout << "Correct solution is: " << testFunction.solution(dimx,dimy) << endl;
 		}
 		catch (std::runtime_error) {}
 	}
-	catch(cl::Error & r)
-	{
-		std::cout << "Cl error in " << r.what() << " code: " << r.err() << std::endl;
-	}
-	catch(std::exception & r)
-	{
-		std::cout << r.what() << std::endl;
-	}
-	catch(...)
-	{
-		std::cout << "Unknown error" << std::endl;
-	}
+// 	catch(cl::Error & r)
+// 	{
+// 		std::cout << "Cl error in " << r.what() << " code: " << r.err() << std::endl;
+// 	}
+// 	catch(std::exception & r)
+// 	{
+// 		std::cout << r.what() << std::endl;
+// 	}
+// 	catch(...)
+// 	{
+// 		std::cout << "Unknown error" << std::endl;
+// 	}
 	return 0;
 }

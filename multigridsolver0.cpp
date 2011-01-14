@@ -22,7 +22,7 @@
 using namespace std;
 
 
-MultigridSolver0::MultigridSolver0(const char* filename, const BorderHandler& handl) :
+MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
 	m_theProgram ( CLContextLoader::loadProgram(filename)),
 	m_iterationKernel(m_theProgram,"iteration_kernel"),
 	m_iterationKernelBorder(m_theProgram,"iteration_kernel_border"),
@@ -33,7 +33,6 @@ MultigridSolver0::MultigridSolver0(const char* filename, const BorderHandler& ha
 	m_residualCorrectKernel(m_theProgram,"residual_correct_kernel"),
 	m_residualCorrectKernelBorder(m_theProgram,"residual_correct_kernel"),
 	m_prolongationKernel(m_theProgram,"prolongation_kernel"),
-	m_testBorder(m_theProgram,"test_border"),
 	m_queue( CLContextLoader::getContext(),CLContextLoader::getDevice(),CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE),
 	m_Handl(handl)
 {
@@ -114,21 +113,21 @@ Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
 
 void MultigridSolver0::smoother_iterate(Buffer2D& res, Buffer2D& auxiliary, const Buffer2D& func, float omega, int a1)
 {
-	m_iterationKernel.setArg(2,func());
-	m_iterationKernel.setArg(3,res.size());
-	m_iterationKernel.setArg(4,omega);
+	m_iterationKernel.setArg(3,func());
+	m_iterationKernel.setArg(4,res.size());
+	m_iterationKernel.setArg(5,omega);
 
-	m_iterationKernelBorder.setArg(2,func());
-	m_iterationKernelBorder.setArg(3,res.size());
-	m_iterationKernelBorder.setArg(4,omega);
+// 	m_iterationKernelBorder.setArg(3,func());
+// 	m_iterationKernelBorder.setArg(4,res.size());
+// 	m_iterationKernelBorder.setArg(5,omega);
 
 	for (int i=0;i < a1;++i)
 	{
-		m_iterationKernel.setArg(0,auxiliary());
-		m_iterationKernel.setArg(1,res());
+		m_iterationKernel.setArg(1,auxiliary());
+		m_iterationKernel.setArg(2,res());
 
-		m_iterationKernelBorder.setArg(0,auxiliary());
-		m_iterationKernelBorder.setArg(1,res());
+		m_iterationKernelBorder.setArg(1,auxiliary());
+		m_iterationKernelBorder.setArg(2,res());
 
 		m_queue.enqueueBarrier();
 		m_Handl.compute(m_queue,m_iterationKernel,m_iterationKernelBorder,res.width(),res.height());
@@ -139,15 +138,15 @@ void MultigridSolver0::smoother_iterate(Buffer2D& res, Buffer2D& auxiliary, cons
 
 void MultigridSolver0::compute_residuals(Buffer2D& res, const Buffer2D& input, const Buffer2D& func)
 {
-	m_residualKernel.setArg(0,res());
-	m_residualKernel.setArg(1,input());
-	m_residualKernel.setArg(2,func());
-	m_residualKernel.setArg(3,res.size());
-
-	m_residualKernelBorder.setArg(0,res());
-	m_residualKernelBorder.setArg(1,input());
-	m_residualKernelBorder.setArg(2,func());
-	m_residualKernelBorder.setArg(3,res.size());
+	m_residualKernel.setArg(1,res());
+	m_residualKernel.setArg(2,input());
+	m_residualKernel.setArg(3,func());
+	m_residualKernel.setArg(4,res.size());
+/*
+	m_residualKernelBorder.setArg(1,res());
+	m_residualKernelBorder.setArg(2,input());
+	m_residualKernelBorder.setArg(3,func());
+	m_residualKernelBorder.setArg(4,res.size());*/
 
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_residualKernel,m_residualKernelBorder,res.width(),res.height());
@@ -158,13 +157,13 @@ void MultigridSolver0::restrict(Buffer2D& res,const Buffer2D& input)
 	assert(res.width() == (input.width()-1)/2+1);
 	assert(res.height() == (input.height()-1)/2+1);
 
-	m_reductionKernel.setArg(0,res());
-	m_reductionKernel.setArg(1,input());
-	m_reductionKernel.setArg(2,res.size());
+	m_reductionKernel.setArg(1,res());
+	m_reductionKernel.setArg(2,input());
+	m_reductionKernel.setArg(3,res.size());
 
-	m_reductionKernelBorder.setArg(0,res());
-	m_reductionKernelBorder.setArg(1,input());
-	m_reductionKernelBorder.setArg(2,res.size());
+// 	m_reductionKernelBorder.setArg(1,res());
+// 	m_reductionKernelBorder.setArg(2,input());
+// 	m_reductionKernelBorder.setArg(3,res.size());
 
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_reductionKernel,m_reductionKernelBorder,res.width(),res.height());
@@ -175,16 +174,16 @@ void MultigridSolver0::correct_residual(Buffer2D& res,const Buffer2D& input, Buf
 	assert(input.width() == (residual.width()-1)*2+1);
 	assert(input.height() == (residual.height()-1)*2+1);
 
-	m_residualCorrectKernel.setArg(0,res());
-	m_residualCorrectKernel.setArg(1,input());
-	m_residualCorrectKernel.setArg(2,residual());
-	m_residualCorrectKernel.setArg(3,res.size());
+	m_residualCorrectKernel.setArg(1,res());
+	m_residualCorrectKernel.setArg(2,input());
+	m_residualCorrectKernel.setArg(3,residual());
+	m_residualCorrectKernel.setArg(4,res.size());
 
-	m_residualCorrectKernelBorder.setArg(0,res());
-	m_residualCorrectKernelBorder.setArg(1,input());
-	m_residualCorrectKernelBorder.setArg(2,residual());
-	m_residualCorrectKernelBorder.setArg(3,res.size());
-
+/*	m_residualCorrectKernelBorder.setArg(1,res());
+	m_residualCorrectKernelBorder.setArg(2,input());
+	m_residualCorrectKernelBorder.setArg(3,residual());
+	m_residualCorrectKernelBorder.setArg(4,res.size());
+*/
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_residualCorrectKernel,m_residualCorrectKernelBorder,res.width(),res.height());
 }
@@ -194,9 +193,9 @@ void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
 	assert(res.width() == (input.width()-1)*2+1);
 	assert(res.height() == (input.height()-1)*2+1);
 
-	m_prolongationKernel.setArg(0,res());
-	m_prolongationKernel.setArg(1,input());
-	m_prolongationKernel.setArg(2,res.size());
+	m_prolongationKernel.setArg(1,res());
+	m_prolongationKernel.setArg(2,input());
+	m_prolongationKernel.setArg(3,res.size());
 
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_prolongationKernel,m_prolongationKernel,res.width(),res.height());
@@ -207,13 +206,4 @@ void MultigridSolver0::zero_mem(Buffer2D& res)
 	CLContextLoader::getZeroMemKer().setArg(0,res());
 	m_queue.enqueueBarrier();
 	m_queue.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),cl::NDRange(0),cl::NDRange(res.width()*res.height()),cl::NDRange(1));
-}
-
-void MultigridSolver0::test_border(Buffer2D& res, cl::Buffer& bord)
-{
-	m_queue.enqueueBarrier();
-	m_testBorder.setArg(0,res());
-	m_testBorder.setArg(1,bord());
-	m_testBorder.setArg(2,res.size());
-	m_queue.enqueueNDRangeKernel(m_testBorder,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),cl::NDRange(4,4));
 }

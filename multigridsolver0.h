@@ -25,14 +25,14 @@
 class BorderHandler
 {
 public:
-	virtual void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy) const = 0;
+	virtual void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy) = 0;
 private:
 };
 
 class MultigridSolver0
 {
 public:
-	MultigridSolver0(const char * filename,const BorderHandler & handl);
+	MultigridSolver0(const char * filename,BorderHandler & handl);
 
 	Buffer2D iterate(Buffer2D & in,
 					const Buffer2D & func,
@@ -56,8 +56,6 @@ public:
 	void prolongate(Buffer2D & res,const Buffer2D & input);
 	void zero_mem(Buffer2D & res);
 
-	void test_border(Buffer2D & res,cl::Buffer & bord);
-
 private:
 	cl::Program m_theProgram;
 
@@ -75,11 +73,9 @@ private:
 
 	cl::Kernel m_prolongationKernel;
 
-	cl::Kernel m_testBorder;
-
 	cl::CommandQueue m_queue;
 
-	const BorderHandler & m_Handl;
+	BorderHandler & m_Handl;
 };
 
 #endif // MULTIGRIDSOLVER0_H
