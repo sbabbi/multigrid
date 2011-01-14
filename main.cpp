@@ -7,16 +7,15 @@
 #include "clcontextloader.h"
 #include "buffer.h"
 #include "multigridsolver0.h"
-#include "borderdescriptor.h"
 
 using namespace std;
 
-std::ostream& operator<<(std::ostream & os,const boost::numeric::ublas::matrix<float> & m)
+std::ostream& operator<<(std::ostream & os,const boost::multi_array<float,2> & m)
 {
-	for (int i=0;i < m.size1();++i)
+	for (int i=0;i < m.shape()[0];++i)
 	{
-		for (int j=0;j < m.size2();++j)
-			os << m(i,j) << " ";
+		for (int j=0;j < m.shape()[1];++j)
+			os << m[i][j] << " ";
 		os << std::endl;
 	}
 	return os;
@@ -57,7 +56,7 @@ public:
 	double LInfNorm(Buffer2D & ans);
 	double LInfError(Buffer2D & ans);
 
-	boost::numeric::ublas::matrix<float> solution(int dimx,int dimy);
+	boost::multi_array<float,2> solution(int dimx,int dimy);
 
 private:
 	float (*m_pFunc)(float,float);
@@ -67,38 +66,34 @@ private:
 
 Buffer2D FunctionTest::makeBuffer(int dimx, int dimy)
 {
-	using namespace boost::numeric::ublas;
-
 	float dx = 1.0f/(dimx-1);
 	float dy = 1.0f/(dimy-1);
 
 	if (dx != dy) cout << "Warning: dx!=dy" << endl;
 
-	matrix<float> buf(dimy,dimx);
+	boost::multi_array<float,2> buf( boost::extents[dimy][dimx]);
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 		if (i == 0 || j == 0 || i == dimx-1 || j == dimy-1)
-			buf(j,i) = m_pBord( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
+			buf[j][i] = m_pBord( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
 		else
-			buf(j,i) = m_pFunc( (float)(i)/(dimx-1), (float)(j)/(dimy-1) )*dx*dx;
+			buf[j][i] = m_pFunc( (float)(i)/(dimx-1), (float)(j)/(dimy-1) )*dx*dx;
 
 	return Buffer2D(dimx,dimy,&buf.data()[0]);
 }
 
 double FunctionTest::L2Error(Buffer2D& ans)
 {
-	using namespace boost::numeric::ublas;
-
 	if (!m_pSol) throw std::runtime_error("Can not compute L2Error without a known solution");
 
 	double l2err = 0;
 	int dimx = ans.width();
 	int dimy = ans.height();
-	matrix<float> res = ans;
+	boost::multi_array<float,2> res = ans;
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 	{
 		double val = m_pSol( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
-		double err = val - res(j,i);
+		double err = val - res[j][i];
 		l2err += (err*err);
 	}
 	return sqrt(l2err);
@@ -106,16 +101,14 @@ double FunctionTest::L2Error(Buffer2D& ans)
 
 double FunctionTest::L2Norm(Buffer2D& ans)
 {
-	using namespace boost::numeric::ublas;
-
 	double l2err = 0;
 	int dimx = ans.width();
 	int dimy = ans.height();
-	matrix<float> res = ans;
+	boost::multi_array<float,2>  res = ans;
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 	{
-		double val = res(j,i);
+		double val = res[j][i];
 		l2err += (val*val);
 	}
 	return sqrt(l2err);
@@ -123,46 +116,40 @@ double FunctionTest::L2Norm(Buffer2D& ans)
 
 double FunctionTest::LInfNorm(Buffer2D& ans)
 {
-	using namespace boost::numeric::ublas;
-
 	double linferr = 0;
 	int dimx = ans.width();
 	int dimy = ans.height();
-	matrix<float> res = ans;
+	boost::multi_array<float,2>  res = ans;
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 	{
-		double val = res(j,i);
+		double val = res[j][i];
 		linferr = max(linferr,fabs(val));
 	}
 	return linferr;
 }
 
-boost::numeric::ublas::matrix<float> FunctionTest::solution(int dimx,int dimy)
+boost::multi_array<float,2> FunctionTest::solution(int dimx,int dimy)
 {
-	using namespace boost::numeric::ublas;
-
-	matrix<float> res(dimy,dimx);
+	boost::multi_array<float,2>  res(boost::extents[dimy][dimx]);
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
-		res(j,i) = m_pSol( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
+		res[j][i] = m_pSol( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
 	return res;
 }
 
 double FunctionTest::LInfError(Buffer2D& ans)
 {
-	using namespace boost::numeric::ublas;
-
 	if (!m_pSol) throw std::runtime_error("Can not compute L2Error without a known solution");
 
 	double linferr = 0;
 	int dimx = ans.width();
 	int dimy = ans.height();
-	matrix<float> res = ans;
+	boost::multi_array<float,2>  res = ans;
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 	{
 		double val = m_pSol( (float)(i)/(dimx-1), (float)(j)/(dimy-1) );
-		double err = fabs(val - res(j,i));
+		double err = fabs(val - res[j][i]);
 		linferr = max(linferr,err);
 	}
 	return sqrt(linferr);
@@ -255,17 +242,6 @@ int main(int argc,char ** argv)
 		cout << "Solver\t\tTime\t\t\tL2Err\t\t\tLInfErr\t\t\tL2Res\t\t\tLinfRes\t\t\t" << endl;
 		RectangularBorderHandler borderHandler;
 		MultigridSolver0 s ("mg_0.cl",borderHandler);
-
-		Buffer2D test (32,32);
-		BorderDescriptor descr = BorderDescriptor::make_rectangle(5,5);
-		cl::Buffer bb = descr();
-		s.test_border(test,bb);
-
-		s.wait();
-
-		cout << test << endl;
-		return 0;
-
 		Buffer2D sol = solve(s,m,f,args[2],args[3],args[4],omega);
 
 		try {
