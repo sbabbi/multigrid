@@ -36,7 +36,7 @@ private:
 class MultigridSolver0
 {
 public:
-	MultigridSolver0(const char * filename,const BorderHandler & handl);
+	MultigridSolver0(const char * filename,BorderHandler & handl);
 
 	Buffer2D iterate(Buffer2D & in,
 					const Buffer2D & func,
@@ -73,7 +73,7 @@ private:
 
 	cl::CommandQueue m_queue;
 
-	const BorderHandler & m_Handl;
+	BorderHandler & m_Handl;
 };
 
 #endif // MULTIGRIDSOLVER0_H

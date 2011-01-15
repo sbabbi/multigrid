@@ -22,7 +22,7 @@
 using namespace std;
 
 
-MultigridSolver0::MultigridSolver0(const char* filename, const BorderHandler& handl) :
+MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
 	m_theProgram ( CLContextLoader::loadProgram(filename)),
 	m_iterationKernel(m_theProgram,"iteration_kernel"),
 	m_residualKernel(m_theProgram,"residual_kernel"),
@@ -111,7 +111,6 @@ void MultigridSolver0::smoother_iterate(Buffer2D& res, Buffer2D& auxiliary, cons
 		m_iterationKernel.setArg(1,auxiliary());
 		m_iterationKernel.setArg(2,res());
 
-
 		m_queue.enqueueBarrier();
 		m_Handl.compute(m_queue,m_iterationKernel,res.width(),res.height());
 
@@ -160,9 +159,9 @@ void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
 	assert(res.width() == (input.width()-1)*2+1);
 	assert(res.height() == (input.height()-1)*2+1);
 
-	m_prolongationKernel.setArg(0,res());
-	m_prolongationKernel.setArg(1,input());
-	m_prolongationKernel.setArg(2,res.size());
+	m_prolongationKernel.setArg(1,res());
+	m_prolongationKernel.setArg(2,input());
+	m_prolongationKernel.setArg(3,res.size());
 
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_prolongationKernel,res.width(),res.height());

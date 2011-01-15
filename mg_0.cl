@@ -1,8 +1,6 @@
 
 #include "real.cl"
 
-/*** 2D- Multigrid Solver kernels **/
-
 /* Border management **/
 typedef struct tagCell {
 	real2 _normals; //MUST BE Manhattan-Normalized
@@ -66,7 +64,6 @@ __kernel void iteration_kernel(global read_only Cell * domain,
 	int sizex = get_global_size(0);
 
 	real val;
-
 	switch (getCellType(domain+base) )
 	{
 	case CELL_INSIDE:
@@ -131,7 +128,7 @@ const __global read_only real4 RED_STENCIL[3] = {
 __kernel void reduction_kernel(global read_only Cell * domain
 								global write_only real * dest,
 								global read_only real * src,
-							   int2 size)
+								int2 size)
 {
 	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
 	int destsizex = get_global_id(0);
@@ -191,7 +188,8 @@ __kernel void residual_correct_kernel(global read_only Cell * domain
 }
 
 /***TODO: Better interpolation ***/
-__kernel void prolongation_kernel(global write_only real * dest,
+__kernel void prolongation_kernel(global read_only real2 * border,
+								  global write_only real * dest,
 									  global read_only real * res,
 										int2 size)
 {

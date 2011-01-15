@@ -3,27 +3,11 @@
 #include <vector>
 #include <cassert>
 #include <iomanip>
+#include <map>
 
 #include "programstate.h"
 
 using namespace std;
-
-/*
-float prettyFunc1(float x,float y)
-{
-	return -2*( (1-6*x*x)*y*y*(1-y*y)+
-				(1-6*y*y)*x*x*(1-x*x));
-}
-float prettyFunc1Sol(float x,float y)
-{
-	return (x*x-x*x*x*x)*(y*y*y*y-y*y);
-}
-float prettyFunc2(float x,float y)
-{
-	return sin(x+y);
-}
-float OppprettyFunc2(float x,float y) {return -2 * prettyFunc2(x,y);}
-*/
 
 int main(int argc,char ** argv)
 {
@@ -48,5 +32,6 @@ int main(int argc,char ** argv)
 		cout << "Unknown error" << endl << endl << "Aborting...";
 		return 1;
 	}
+
 	return 0;
 }
