@@ -18,4 +18,38 @@
 
 */
 
-#include "buffer.h"
+#ifndef PROGRAMSTATE_H
+#define PROGRAMSTATE_H
+
+#include "multigridsolver0.h"
+#include "rectangularborderhandler.h"
+#include "functionhandler.h"
+
+class ProgramState
+{
+public:
+	enum SolverMode {Fmg = 0,Smooth = 1,Multigrid = 2};
+
+	ProgramState(int argc,char ** argv);
+
+	void listenCommand();
+
+private:
+
+	void solve();
+	
+	SolverMode m_curMode;
+	int m_dimx,m_dimy;
+	int stepA1,stepA2,VCycles;
+	real m_omega;
+	bool m_bDisplaySolution,m_bDisplayResidual,m_bDisplayError;
+
+	Buffer2D m_residual;
+	Buffer2D m_error;
+	Buffer2D m_solution;
+	RectangularBorderHandler m_handler;
+	MultigridSolver0 m_solver;
+	FunctionHandler m_funcHandler;
+};
+
+#endif // PROGRAMSTATE_H

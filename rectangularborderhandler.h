@@ -18,4 +18,18 @@
 
 */
 
-#include "buffer.h"
+#ifndef RECTANGULARBORDERHANDLER_H
+#define RECTANGULARBORDERHANDLER_H
+
+#include "multigridsolver0.h"
+
+class RectangularBorderHandler : public BorderHandler
+{
+public:
+	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy) const ;
+	virtual CellType cellType(int x,int y,int dimx,int dimy) const;
+
+private:
+};
+
+#endif // RECTANGULARBORDERHANDLER_H

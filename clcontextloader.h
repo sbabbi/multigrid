@@ -26,13 +26,22 @@
 #include <CL/cl.hpp>
 #include <iostream>
 
+typedef cl_float real;
+typedef cl_float2 real2;
+typedef cl_float4 real4;
+typedef cl_float8 real8;
+typedef cl_float16 real16;
+
 class CLContextLoader
 {
 public:
 	static cl::Context& getContext() {return instance().m_context;}
-	static cl::CommandQueue& getQueue() {return instance().m_queue1;}
 	static cl::Device & getDevice() {return instance().m_device;}
 	static cl::Kernel& getZeroMemKer() {return instance().m_ZeroMemory;}
+	static cl::Kernel& getRedL2NormKer() {return instance().m_RedL2Norm;}
+	static cl::Kernel& getRedSumAllKer() {return instance().m_RedSumAll;}
+	static cl::Kernel& getRedLInfKer() {return instance().m_RedLInfKer;}
+	static cl::Kernel& getMultKer() {return instance().m_MultKer;}
 	static cl::Program loadProgram(const char * filename) {return instance().loadProgramFromFile(filename);}
 
 protected:
@@ -49,10 +58,13 @@ protected:
 	cl::Platform m_platform;
 	cl::Device m_device;
 	cl::Context m_context;
-	cl::CommandQueue m_queue1;
 
 	cl::Program m_commonKernelsProg;
 	cl::Kernel m_ZeroMemory;
+	cl::Kernel m_RedL2Norm;
+	cl::Kernel m_RedSumAll;
+	cl::Kernel m_RedLInfKer;
+	cl::Kernel m_MultKer;
 
 };
 

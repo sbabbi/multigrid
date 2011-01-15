@@ -18,4 +18,5 @@
 
 */
 
-#include "buffer.h"
+#include "rectangularborderhandler.h"
+

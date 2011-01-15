@@ -18,4 +18,27 @@
 
 */
 
+#ifndef AUXILIARY_H
+#define AUXILIARY_H
+
 #include "buffer.h"
+
+Buffer2D perform2DReduction(Buffer2D & in,cl::Kernel & ker,cl::CommandQueue & q,int xtill = 1,int ytill = 1);
+cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim);
+
+inline real L2Norm(Buffer2D & in,cl::CommandQueue & q)
+{
+	return perform2DReduction(in,CLContextLoader::getRedL2NormKer(),q).read(q)[0][0];
+}
+
+inline real LInfNorm(Buffer2D & in,cl::CommandQueue & q)
+{
+	return perform2DReduction(in,CLContextLoader::getRedLInfKer(),q).read(q)[0][0];
+}
+
+inline real Average(Buffer2D & in,cl::CommandQueue & q)
+{
+	return perform2DReduction(in,CLContextLoader::getRedSumAllKer(),q).read(q)[0][0] / (in.width()*in.height());
+}
+
+#endif //AUXILIARY_H

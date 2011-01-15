@@ -18,4 +18,33 @@
 
 */
 
-#include "buffer.h"
+#ifndef FUNCTIONHANDLER_H
+#define FUNCTIONHANDLER_H
+
+#include "multigridsolver0.h"
+
+typedef real (*Function2D)(real,real);
+
+class FunctionHandler
+{
+public:
+	FunctionHandler( Function2D f,
+				  Function2D borders,
+				  Function2D solution = 0) : m_pFunc(f),
+												m_pBord(borders),
+												m_pSol(solution)
+	{}
+
+	Buffer2D discretize(int dimx,int dimy,real dh,const BorderHandler & bord);
+	real L2Error(Buffer2D& ans, cl::CommandQueue& q);
+	real LInfError(Buffer2D & ans, cl::CommandQueue& q);
+
+	boost::multi_array<real,2> solution(int dimx,int dimy);
+
+private:
+	Function2D m_pFunc;
+	Function2D m_pBord;
+	Function2D m_pSol;
+};
+
+#endif // FUNCTIONHANDLER_H

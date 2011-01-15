@@ -24,8 +24,6 @@
 #include "clcontextloader.h"
 #include <boost/multi_array.hpp>
 
-std::ostream& operator<<(std::ostream & os,const boost::multi_array<float,2>  & m);
-
 class Buffer2D {
 public:
 	enum WriteMode {
@@ -34,13 +32,15 @@ public:
 		ReadWrite = CL_MEM_READ_WRITE
 	};
 
+	Buffer2D() : m_dimx(0),m_dimy(0) {}
+
 	Buffer2D(int w,int h,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),
 		m_data(CLContextLoader::getContext(),
-			   m,sizeof(float)*m_dimx*m_dimy) {}
+			   m,sizeof(real)*m_dimx*m_dimy) {}
 
-	Buffer2D(int w,int h,float * f,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),
+	Buffer2D(int w,int h,real * f,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),
 		m_data(CLContextLoader::getContext(),
-			   m | CL_MEM_COPY_HOST_PTR,sizeof(float)*m_dimx*m_dimy,f) {}
+			   m | CL_MEM_COPY_HOST_PTR,sizeof(real)*m_dimx*m_dimy,f) {}
 
 	Buffer2D(const Buffer2D & r) : m_dimx(r.m_dimx),m_dimy(r.m_dimy),m_data(r.m_data)
 	{
@@ -53,28 +53,25 @@ public:
 		m_data = r.m_data;
 	}
 
-	static Buffer2D empty(int w,int h)
+	bool isInitialized() {return m_dimx != 0 && m_dimy != 0;}
+
+	static Buffer2D empty(int w,int h,cl::CommandQueue & q)
 	{
 		Buffer2D res(w,h);
 		CLContextLoader::getZeroMemKer().setArg(0,res.m_data());
-
-		cl::Event ev;
-		CLContextLoader::getQueue().enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),
+		q.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),
 														 cl::NDRange(0),
 														 cl::NDRange(w*h),
 														 cl::NullRange,
-														 0,
-														 &ev);
-		ev.wait();
+														 0);
 		return res;
 	}
 
-	operator boost::multi_array<float,2>() const
+	boost::multi_array<real,2> read(cl::CommandQueue & q) const
 	{
-		boost::multi_array<float,2> ans (boost::extents[m_dimy][m_dimx]);
+		boost::multi_array<real,2> ans (boost::extents[m_dimy][m_dimx]);
 
-		CLContextLoader::getQueue().enqueueBarrier();
-		CLContextLoader::getQueue().enqueueReadBuffer(m_data,true,0,sizeof(float)*m_dimx*m_dimy,ans.data());
+		q.enqueueReadBuffer(m_data,true,0,sizeof(real)*m_dimx*m_dimy,ans.data());
 		return ans;
 	}
 
@@ -103,11 +100,11 @@ public:
 
 	Buffer3D(int w,int h,int d,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),m_dimz(d),
 		m_data(CLContextLoader::getContext(),
-			   m,sizeof(float)*m_dimx*m_dimy*m_dimz) {}
+			   m,sizeof(real)*m_dimx*m_dimy*m_dimz) {}
 
-	Buffer3D(int w,int h,int d,float * f,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),m_dimz(d),
+	Buffer3D(int w,int h,int d,real * f,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),m_dimz(d),
 		m_data(CLContextLoader::getContext(),
-			   m | CL_MEM_COPY_HOST_PTR,sizeof(float)*m_dimx*m_dimy*m_dimz,f) {}
+			   m | CL_MEM_COPY_HOST_PTR,sizeof(real)*m_dimx*m_dimy*m_dimz,f) {}
 
 	Buffer3D(const Buffer3D & r) : m_dimx(r.m_dimx),m_dimy(r.m_dimy),m_dimz(r.m_dimz),m_data(r.m_data)
 	{
@@ -121,28 +118,24 @@ public:
 		m_data = r.m_data;
 	}
 
-	static Buffer3D empty(int w,int h,int d)
+	static Buffer3D empty(int w,int h,int d,cl::CommandQueue & q)
 	{
 		Buffer3D res(w,h,d);
 		CLContextLoader::getZeroMemKer().setArg(0,res.m_data());
 
-		cl::Event ev;
-		CLContextLoader::getQueue().enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),
+		q.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),
 														 cl::NDRange(0),
 														 cl::NDRange(w*h*d),
 														 cl::NullRange,
-														 0,
-														 &ev);
-		ev.wait();
+														 0);
 		return res;
 	}
 
-	operator boost::multi_array<float,3>() const
+	boost::multi_array<real,3> read (cl::CommandQueue & q) const
 	{
-		boost::multi_array<float,3> ans (boost::extents[m_dimz][m_dimy][m_dimx]);
+		boost::multi_array<real,3> ans (boost::extents[m_dimz][m_dimy][m_dimx]);
 
-		CLContextLoader::getQueue().enqueueBarrier();
-		CLContextLoader::getQueue().enqueueReadBuffer(m_data,true,0,sizeof(float)*m_dimx*m_dimy*m_dimz,ans.data());
+		q.enqueueReadBuffer(m_data,true,0,sizeof(real)*m_dimx*m_dimy*m_dimz,ans.data());
 		return ans;
 	}
 

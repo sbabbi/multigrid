@@ -25,7 +25,11 @@
 class BorderHandler
 {
 public:
-	virtual void compute(cl::CommandQueue & queue,cl::Kernel & innerKer,cl::Kernel & borderKer,int dimx,int dimy) const = 0;
+	enum CellType { CellInner,CellOuter,CellDirichlet,CellNeumann };
+	
+	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy) const = 0;
+	virtual CellType cellType(int x,int y,int dimx,int dimy) const = 0;
+
 private:
 };
 
@@ -49,6 +53,8 @@ public:
 
 	void wait() { m_queue.finish();}
 
+	cl::CommandQueue & queue() {return m_queue;}
+
 	void smoother_iterate(Buffer2D& res, Buffer2D & auxiliary, const Buffer2D& func, float omega, int a1);
 	void compute_residuals(Buffer2D& res,const Buffer2D & input, const Buffer2D& func);
 	void restrict(Buffer2D& res,const Buffer2D & input);
@@ -56,26 +62,14 @@ public:
 	void prolongate(Buffer2D & res,const Buffer2D & input);
 	void zero_mem(Buffer2D & res);
 
-	void test_border(Buffer2D & res,cl::Buffer & bord);
-
 private:
 	cl::Program m_theProgram;
 
 	cl::Kernel m_iterationKernel;
-	cl::Kernel m_iterationKernelBorder;
-
 	cl::Kernel m_residualKernel;
-	cl::Kernel m_residualKernelBorder;
-
 	cl::Kernel m_reductionKernel;
-	cl::Kernel m_reductionKernelBorder;
-
 	cl::Kernel m_residualCorrectKernel;
-	cl::Kernel m_residualCorrectKernelBorder;
-
 	cl::Kernel m_prolongationKernel;
-
-	cl::Kernel m_testBorder;
 
 	cl::CommandQueue m_queue;
 

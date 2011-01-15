@@ -50,15 +50,16 @@ CLContextLoader::CLContextLoader()
 	//Initialize the context
 	m_context = cl::Context(devices,propp);
 
-	//Initialize the queue
-	m_queue1 = cl::CommandQueue(m_context,m_device,CL_QUEUE_PROFILING_ENABLE);
-
 	const std::string strFilename = "common_kernels.cl";
 
 	m_commonKernelsProg = loadProgramFromFile(strFilename.c_str());
 
 	//Initialize the kernels
 	m_ZeroMemory = cl::Kernel(m_commonKernelsProg,"zero_memory");
+	m_RedSumAll = cl::Kernel(m_commonKernelsProg,"SumAll");
+	m_RedL2Norm = cl::Kernel(m_commonKernelsProg,"L2Norm");
+	m_MultKer = cl::Kernel(m_commonKernelsProg,"Mult");
+	m_RedLInfKer = cl::Kernel(m_commonKernelsProg,"LInfNorm");
 }
 
 cl::Program CLContextLoader::loadProgramFromFile(const char * filename)

@@ -1,28 +1,77 @@
 /*common_kernels.cl*/
 
-/*#pragma OPENCL EXTENSION cl_khr_fp64: enable*/
-
-/** Sum of two buffers of floats**/
-__kernel void sum(	__global write_only float * result,
-					__global read_only float * arg1,
-					__global read_only float * arg2)
-{
-	size_t i = get_global_id(0);
-	result[i]= arg1[i]+arg2[i];
-}
-
-/** Subtraction of two buffers of floats**/
-__kernel void sub(	__global write_only float * result,
-					__global read_only float * arg1,
-					__global read_only float * arg2)
-{
-	size_t i = get_global_id(0);
-	result[i]= arg1[i]-arg2[i];
-}
+#include "real.cl"
 
 /** Zero-initialization **/
-__kernel void zero_memory(__global write_only float * result)
+__kernel void zero_memory(__global write_only real * result)
 {
 	size_t i = get_global_id(0);
 	result[i] = 0;
+}
+
+/** Parallel L2-Norm **/
+__kernel void L2Norm(__global read_only real * input,
+					 __global write_only real * output,
+					 int inputSize,
+					 int chunks)
+{
+	int outPos = get_global_id(0);
+	real res = 0.0;
+
+	int base = outPos*chunks;
+	int end = min(inputSize,base+chunks)
+	for ( ;base < end;++base)
+		res+= input[base]*input[base];
+
+	if (get_global_size(0) == 1)
+		output[outPos] = sqrt(res);
+	else
+		output[outPos] = res;
+}
+
+/** Parallel LInf-Norm **/
+__kernel void LInfNorm(__global read_only real * input,
+					 __global write_only real * output,
+					 int inputSize,
+					 int chunks)
+{
+	int outPos = get_global_id(0);
+	real res = 0.0;
+
+	int base = outPos*chunks;
+	int end = min(inputSize,base+chunks)
+	for ( ;base < end;++base)
+		res+= max(res,input[base]);
+
+	output[outPos] = res;
+}
+
+/** Parallel SumAll **/
+__kernel void SumAll(__global read_only real * input,
+					 __global write_only real * output,
+					 int inputSize,
+					 int chunks)
+{
+	int outPos = get_global_id(0);
+	real res = 0.0;
+	
+	int base = outPos*chunks;
+	int end = min(inputSize,base+chunks)
+	for ( ;base < end;++base)
+		res+= input[base];
+	
+	if (get_global_size(0) == 1)
+		output[outPos] = sqrt(res);
+	else
+		output[outPos] = res;
+}
+
+/** Parallel mult by constant **/
+__kernel void Mult(__global read_only real * input,
+				   __global write_only real * output,
+					 float m)
+{
+	int outPos = get_global_id(0);
+
+	output[outPos] = input[outPos]*m;
 }

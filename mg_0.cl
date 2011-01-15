@@ -1,141 +1,193 @@
-/*** Dumped jacobi ker ***/
 
-#define real float
+#include "real.cl"
 
-inline real getval(int2 _X,int2 size,global read_only real * src,global read_only real * func)
+/*** 2D- Multigrid Solver kernels **/
+
+/* Border management **/
+typedef struct tagCell {
+	real2 _normals; //MUST BE Manhattan-Normalized
+}Cell;
+
+#define CELL_INSIDE 0
+#define CELL_OUTSIDE 1
+#define CELL_DIRICHLET 2
+#define CELL_NEUMANN 3
+
+inline int getCellType(const __global read_only Cell * c)
 {
-	return  0.25f * (
-		src[_X.x + size.x * _X.y + 1] +
-		src[_X.x + size.x * _X.y - 1] +
-		src[_X.x + size.x * (_X.y +1)] +
-		src[_X.x + size.x * (_X.y -1)] -
-		func[_X.x + size.x * _X.y] );
+	if ( c._normals == (real2)(0.0,0.0)) return CELL_INSIDE;
+	if ( c._normals[0] == NAN && c._normals[1] == NAN) return CELL_OUTSIDE;
+	if ( c._normals[0] == NAN) return CELL_DIRICHLET;
+	return CELL_NEUMANN;
 }
 
-__kernel void iteration_kernel(global write_only real * dest,
+/*** Dumped jacobi iteratation ***/
+inline real jacobi_iteration(int base,
+							 int xsize,
+							 global read_only real * src,
+							 global read_only real * func)
+{
+	return  0.25 * (
+		src[base +1] +
+		src[base -1] +
+		src[base + xsize] +
+		src[base - xsize] -
+		func[base] );
+}
+
+/*** Residuals ***/
+inline real residual(int base,
+					 int xsize,
+					 global read_only real * src,
+					 global read_only real * func)
+{
+	return src[base +1] + src[base -1] + src[base + xsize] + src[base -xsize] - 4* src[base] - func[base];
+}
+
+
+/*** iteration_kernel
+	* This kernel computes an iteration of the weighted-jacobi method.
+
+	* domain is a pointer to a bidimensional array of Cell data, which represents the description of the domains and borders
+	* dest is the bidimensional output array
+	* src is the current solution, on which we should perform the iteration
+	* func is the target function (on the borders too!)
+	* w is the omega parameter for the dumped jacobi iteration
+
+	* Notice that the size of domain,dest,src and func MUST be equal to (int2)(get_global_size(0),get_global_size(1))
+*/
+__kernel void iteration_kernel(global read_only Cell * domain,
+							global write_only real * dest,
 							global read_only real * src,
 							global read_only real * func,
-							int2 size,
 							real w)
 {
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-
-	real val = getval(_X,size,src,func);
-	dest [ _X.x + size.x * _X.y] = val * w + (1.0-w)* src[_X.x + size.x * _X.y];
-}
-
-__kernel void iteration_kernel_border(global write_only real * dest,
-									  global read_only real * src,
-									  global read_only real * func,
-									  int2 size,
-									  real w)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-
-	/** Implement dirichlet condition **/
-	dest [_X.x +size.x* _X.y] = func [_X.x + size.x* _X.y];
-}
-
-__kernel void residual_kernel(global write_only real * dest,
-								global read_only real * src,
-								global read_only real * func,
-								int2 size)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-
-	real val =
-		src[_X.x + size.x * _X.y + 1] +
-		src[_X.x + size.x * _X.y - 1] +
-		src[_X.x + size.x * (_X.y +1)] +
-		src[_X.x + size.x * (_X.y -1)] -
-		4 * src[_X.x + size.x * _X.y] -
-		func[_X.x + size.x * _X.y];
-
-	dest [ _X.x + size.x * _X.y] = val;
-}
-
-__kernel void residual_kernel_border(global write_only real * dest,
-								global read_only real * src,
-								global read_only real * func,
-								int2 size)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-
-	real val = src[_X.x + size.x * _X.y] - func[_X.x + size.x * _X.y];
-
-	dest [ _X.x + size.x * _X.y] = val;
-}
-
-/**Full-weighting**/
-__kernel void reduction_kernel(global write_only real * dest,
-								global read_only real *src,
-							   int2 size)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-	int2 _srcSize =  (size-(int2)(1,1))*2 + (int2)(1,1);
-
-	dest [ _X.x + size.x * _X.y] = (
-		4 * src [ 2 * _X.x + 2 * _srcSize.x * _X.y] +
-		2 * src [ 2 * _X.x + 1 + 2 * _srcSize.x * _X.y] +
-		2 * src [ 2 * _X.x - 1 + 2 * _srcSize.x * _X.y] +
-		2 * src [ 2 * _X.x + _srcSize.x * (2*_X.y+1)] +
-		2 * src [ 2 * _X.x + _srcSize.x * (2*_X.y-1)] +
-		src [ 2 * _X.x+1 + _srcSize.x * (2*_X.y-1)] +
-		src [ 2 * _X.x-1 + _srcSize.x * (2*_X.y+1)] +
-		src [ 2 * _X.x+1 + _srcSize.x * (2*_X.y+1)] +
-		src [ 2 * _X.x-1 + _srcSize.x * (2*_X.y-1)])/16.0;
-}
-
-/** Half weighting
-__kernel void reduction_kernel(global write_only real * dest,
-								global read_only real *src,
-							   int2 size)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-	int2 _srcSize =  (size-(int2)(1,1))*2 + (int2)(1,1);
-
-	dest [ _X.x + size.x * _X.y] = (
-		4 * src [ 2 * _X.x + 2 * _srcSize.x * _X.y] +
-		src [ 2 * _X.x + 1 + 2 * _srcSize.x * _X.y] +
-		src [ 2 * _X.x - 1 + 2 * _srcSize.x * _X.y] +
-		src [ 2 * _X.x + _srcSize.x * (2*_X.y+1)] +
-		src [ 2 * _X.x + _srcSize.x * (2*_X.y-1)] )/8.0;
-}**/
-
-__kernel void reduction_kernel_border(global write_only real * dest,
-								global read_only real *src,
-							   int2 size)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-	int2 _srcSize =  (size-(int2)(1,1))*2 + (int2)(1,1);
-
-	dest [ _X.x + size.x * _X.y] = src [ 2 * _X.x + 2 * _srcSize.x * _X.y];
-}
-
-__kernel void residual_correct_kernel(global write_only real * dest,
-										global read_only real *src,
-										global read_only real * res,
-										int2 size)
-{
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-	int2 _resSize =  (size-(int2)(1,1))/2 + (int2)(1,1);
+	int base = get_global_id(0) + get_global_size(0)*get_global_id(1);
+	int sizex = get_global_size(0);
 
 	real val;
 
-	if ( _X.x % 2 == 0 && _X.y % 2 == 0)
-		val = res [_X.x/2 + _resSize.x * _X.y/2];
-	else if (_X.x % 2 == 1 && _X.y % 2 == 0)
-		val = 0.5* (res[_X.x/2 + _resSize.x * _X.y/2] + res[_X.x/2 + 1 + _resSize.x * _X.y/2]);
-	else if (_X.x % 2 == 0 && _X.y % 2 == 1)
-		val = 0.5* (res[_X.x/2 + _resSize.x * (_X.y/2)] + res[_X.x/2 + _resSize.x * (_X.y/2+1)]);
-	else
-		val = 0.25*(res[_X.x/2 + _resSize.x * (_X.y/2)] +
-					res[_X.x/2 + _resSize.x * (_X.y/2+1)] +
-					res[_X.x/2 + 1 + _resSize.x * (_X.y/2)] +
-					res[_X.x/2 + 1 + _resSize.x * (_X.y/2+1)]);
+	switch (getCellType(domain+base) )
+	{
+	case CELL_INSIDE:
+		val = jacobi_iteration(base,sizex,src,func);
+		dest[base] = val * w + (1.0-w)* src[base];
+		break;
+	case CELL_OUTSIDE
+		break;
+	case CELL_DIRICHLET:
+		dest[base] = src[base];
+		break;
+	case CELL_NEUMANN:
+		break;
+	}
+}
+
+/*** residual_kernel
+	* This kernel computes the residuals of the current solution
+
+	* domain,dest,src,func,size as in iteration_kernel
+*/
+__kernel void residual_kernel(global read_only Cell * domain,
+								global write_only real * dest,
+								global read_only real * src,
+								global read_only real * func)
+{
+	int base = get_global_id(0) + get_global_size(0)*get_global_id(1);
+	int sizex = get_global_size(0);
+
+	switch (getCellType(domain+base) )
+	{
+		case CELL_INSIDE:
+			dest[base] = residual(base,sizex,src,func);
+			break;
+		case CELL_OUTSIZE:
+			break;
+		case CELL_DIRICHLET:
+			dest[base] = src[base]-func[base];
+			break;
+		case CELL_NEUMANN:
+			break;
+	}
+}
+
+const __global read_only real4 RED_STENCIL[3] = {
+	(1.0/16.0, 1.0/8.0,1.0/16.0,0),
+	(1.0/8.0, 1.0/4.0,1.0/8.0,0),
+	(1.0/16.0, 1.0/8.0,1.0/16.0,0)
+}
+
+/*** reduction_kernel
+	* This kernel computes a Full-weighting reduction of the function passed in src
+
+	* domain as in iteration_kernel. domain size MUST be equal to (int2)(get_global_size(0),get_global_size(1))
+	* dest is the output 2d-array, whose size MUST be equal to (int2)(get_global_size(0),get_global_size(1))
+	* src is the input function
+	* size is the size of the INPUT function
+
+	* Notice that the size of dest MUST be equal to (int2)(get_global_size(0),get_global_size(1))
+	* Also, the destination size MUST be half of the src size
+*/
+__kernel void reduction_kernel(global read_only Cell * domain
+								global write_only real * dest,
+								global read_only real * src,
+							   int2 size)
+{
+	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
+	int destsizex = get_global_id(0);
+
+	int srcbase = 2*get_global_id(0)+ size.x*2*get_global_id(1);
+	int srcsizex = size.x;
+
+	switch (getCellType(domain+destbase) )
+	{
+	case CELL_INSIDE:
+		dest[destbase] =
+			dot (RED_STENCIL[0],(real4)( src[srcbase-srcsizex-1],src[srcbase-srcsizex],src[srcbase-srcsizex+1],0) ) +
+			dot (RED_STENCIL[1],(real4)( src[srcbase-1],src[srcbase],src[srcbase+1],0) ) +
+			dot (RED_STENCIL[0],(real4)( src[srcbase+srcsizex-1],src[srcbase+srcsizex],src[srcbase+srcsizex+1],0) );
+		break;
+	case CELL_OUTSIDE:
+		break;
+	case CELL_DIRICHLET:
+		break;
+	case CELL_NEUMANN:
+		break;
+	}
+}
+
+/*** residual_correct_kernel
+	* This kernel prolongate the error err, and use the prolongation of err to correct the solution in input
+
+	* domain,dest,input are bidimension arrays of size (int2)(get_global_size(0),get_global_size(1))
+	* err is a bidimensional array
+
+	* Notice that err size must be HALF of dest size.
+***/
+__kernel void residual_correct_kernel(global read_only Cell * domain
+										global write_only real * dest,
+										global read_only real * input,
+										global read_only real * err)
+{
+	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
+	int destsizex = get_global_id(0);
+
+	int errsizex = get_global_size(0)/2;
+	int errbase = get_global_id(0)/2 + errsizex*(get_global_id(1)/2);
+	
+	real2 p = (real2)( 0.5 - (get_global_id(0)%2)*(1.0/(2*get_global_id(0))),
+					0.5 - (get_global_id(1)%2)*(1.0/(2*get_global_id(1))) );
+
+	real2 errCoord = (real2)(get_global_id(0)+0.5,get_global_id(1)+0.5)*p;
+	real2 w = errCoord-floor(errCoord);
+
+	real val = err[errbase] * (1.0-w.x)*(1.0-w.y)+
+				err[errbase+1] * (w.x)*(1.0-w.y)+
+				err[errbase+errsizex] * (1.0-w.x)*w.y +
+				err[errbase+errsizex+1] * w.x*w.y;
 
 
-	dest [ _X.x + size.x * _X.y] = src[_X.x + size.x * _X.y] - val*4;
+	dest [destbase] = src[destbase] - val*4;
 }
 
 /***TODO: Better interpolation ***/
@@ -162,100 +214,4 @@ __kernel void prolongation_kernel(global write_only real * dest,
 
 
 	dest [ _X.x + size.x * _X.y] = val;
-}
-
-/** Border test kernel **/
-
-typedef struct
-{
-	union {float2 normal;int child[4];};
-	bool leaf;
-}Node;
-
-inline int child(int x,int y,int xdimp2,int ydimp2)
-{
-	return (x >= (1 << (xdimp2-1))) + 2*( (y >= (1 << (ydimp2-1))) );
-}
-
-inline int rebase(int coord,int dimp2)
-{
-	return coord % ( 1 << (dimp2));
-}
-
-inline int log2_int(int c)
-{
-	for (int i=31;i >= 0;--i)
-		if (c & (1 << i)) return i+ (c % (1 << i) != 0);
-	return 0;
-}
-
-int go_base(int x,int y,int xdimp2,int ydimp2,int destxdimp2,int destydimp2,__global read_only Node * tree)
-{
-	int base = 0;
-	for (int j=0;j < 10000;++j)
-	{
-		if (xdimp2 <= destxdimp2 || ydimp2 <= destydimp2) return base;
-
-		int next = child(x,y,max(xdimp2,ydimp2),max(xdimp2,ydimp2));
-
-		if (tree[base].child[next] == -1) return -1;
-
-		int new_base_x = xdimp2 < ydimp2 ? xdimp2 : xdimp2-1;
-		int new_base_y = ydimp2 < xdimp2 ? ydimp2 : ydimp2-1;
-		x = rebase(x,new_base_x);
-		y = rebase(y,new_base_y);
-		xdimp2 = new_base_x;
-		ydimp2 = new_base_y;
-		base = tree[base].child[next];
-	}
-	return -1;
-}
-
-bool find_node(int x, int y, int xdimp2, int ydimp2, __private write_only float2* out,__global read_only Node * tree,int base)
-{
-	if (base == -1) return 0;
-	for (int j=0;j < 10000;++j)
-	{
-		if (tree[base].leaf)
-		{
-			/*assert(x == 0 && y == 0 && xdimp2 == 0 && ydimp2 == 0);*/
-			*out = tree[base].normal;
-			return 1;
-		}
-		int next = child(x,y,max(xdimp2,ydimp2),max(xdimp2,ydimp2));
-
-		if (tree[base].child[next] == -1) return 0;
-
-		int new_base_x = xdimp2 < ydimp2 ? xdimp2 : xdimp2-1;
-		int new_base_y = ydimp2 < xdimp2 ? ydimp2 : ydimp2-1;
-		x = rebase(x,new_base_x);
-		y = rebase(y,new_base_y);
-		xdimp2 = new_base_x;
-		ydimp2 = new_base_y;
-		base = tree[base].child[next];
-	}
-	return 0;
-}
-
-__kernel void test_border(global write_only real * dest,
-						  global read_only Node * bord,
-						  int2 size)
-{
-	__local int base;
-
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-
-	int p2sizex = log2_int(size.x);
-	int p2sizey = log2_int(size.y);
-
-	if (get_local_id(0) == 0 && get_local_id(1) == 0)
-	{
-		base = go_base(_X.x,_X.y,p2sizex,p2sizey,log2_int(get_local_size(0)),log2_int(get_local_size(1)),bord);
-	}
-
-	barrier(CLK_LOCAL_MEM_FENCE);
-
-	float2 ans;
-
-	dest [ _X.x + size.x * _X.y] = find_node(_X.x % get_local_size(0),_X.y % get_local_size(1),log2_int(get_local_size(0)),log2_int(get_local_size(1)),&ans,bord,base);
 }
