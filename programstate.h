@@ -36,7 +36,18 @@ public:
 
 private:
 
-	void solve();
+	void setdim( std::istream & params);
+	void setsmoothsteps( std::istream & params);
+	void setmode( std::istream & params);
+	void setvcycles( std::istream & params);
+	void setomega( std::istream & params);
+	void state( std::istream & params);
+	void print( std::istream & params);
+	void quit( std::istream & params);
+	void help( std::istream & params);
+	void solve( std::istream & params);
+	void save( std::istream & params);
+
 	void helpString();
 
 	SolverMode m_curMode;
@@ -52,6 +63,15 @@ private:
 	RectangularBorderHandler m_handler;
 	MultigridSolver0 m_solver;
 	FunctionHandler m_funcHandler;
+
+	struct CommandTableEntry
+	{
+		const char * CmdName;
+		void (ProgramState::* Func)(std::istream&);
+		const char * Description;
+	};
+
+	static CommandTableEntry CommandTable [];
 };
 
 #endif // PROGRAMSTATE_H

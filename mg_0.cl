@@ -58,22 +58,19 @@ void do_rbgauss(global read_only Cell * domain,
 			int sizex)
 {
 	real val;
-	if ( (get_global_id(0) + get_global_id(1)) % 2== 0)
+	switch (getCellType(domain+base) )
 	{
-		switch (getCellType(domain+base) )
-		{
-			case CELL_INSIDE:
-				val = jacobi_iteration(base,sizex,dest,func);
-				dest[base] = val * w + (1.0-w)* dest[base];
-				break;
-			case CELL_OUTSIDE:
-				break;
-			case CELL_DIRICHLET:
-				dest[base] = func[base];
-				break;
-			case CELL_NEUMANN:
-				break;
-		}
+		case CELL_INSIDE:
+			val = jacobi_iteration(base,sizex,dest,func);
+			dest[base] = val * w + (1.0-w)* dest[base];
+			break;
+		case CELL_OUTSIDE:
+			break;
+		case CELL_DIRICHLET:
+			dest[base] = func[base];
+			break;
+		case CELL_NEUMANN:
+			break;
 	}
 }
 

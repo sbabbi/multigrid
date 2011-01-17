@@ -23,12 +23,12 @@
 
 #include "buffer.h"
 
-cl::Buffer performReduction(cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size);
+cl::Buffer performReduction(const cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size);
 cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim);
 
-real L2Norm(Buffer2D & in,cl::CommandQueue & q);
+real L2Norm(const Buffer2D & in,cl::CommandQueue & q);
 
-inline real LInfNorm(Buffer2D & in,cl::CommandQueue & q)
+inline real LInfNorm(const Buffer2D & in,cl::CommandQueue & q)
 {
 	cl::Buffer buf = performReduction(in.data(),
 							CLContextLoader::getRedLInfKer(),
@@ -51,5 +51,8 @@ inline real Average(Buffer2D & in,cl::CommandQueue & q)
 	q.enqueueReadBuffer(buf,true,0,sizeof(real),&ans);
 	return ans/ (in.width()*in.height());;
 }
+
+Buffer2D fromBitmap(const char * filename);
+void toBitmap(const Buffer2D & in,cl::CommandQueue & q,const char * filename);
 
 #endif //AUXILIARY_H

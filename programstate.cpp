@@ -20,10 +20,27 @@
 
 #include "auxiliary.h"
 #include "programstate.h"
+#include <fstream>
 #include <iostream>
 #include <iomanip>
 
 using namespace std;
+
+ProgramState::CommandTableEntry ProgramState::CommandTable[] =
+{
+	{"solve",&ProgramState::solve,"solve: Solves the problem with the current parameters"},
+	{"quit",&ProgramState::quit,"quit: Exits the program"},
+	{"print",&ProgramState::print,"print what: Prints some function. \"print err\" prints the error function, \"print sol\" prints the solution, \"print res\" prints the residuals"},
+	{"setdim",&ProgramState::setdim,"setdim dimx dimy: Sets working dimensions"},
+	{"setmode",&ProgramState::setmode,"setmode mode: Sets the solving mode. \"fmg\" for FMG method, \"mg\" for default multi-grid method, \"sor\" for simple Successive-Overrelaxation"},
+	{"setsmoothsteps",&ProgramState::setsmoothsteps,"setsmoothsteps a1 a2: sets the number of pre and post relaxation iteration for FMG and MG method"},
+	{"setomega",&ProgramState::setomega,"setomega o: sets the omega parameter for every smoother"},
+	{"state",&ProgramState::state,"state: prints the current state of the solver"},
+	{"setvcycles",&ProgramState::setvcycles,"setvcycles: set the number of cycles for multigrid and FMG methods"},
+	{"save",&ProgramState::save,"save what filename: save (sol err res) to the output file \"filename\" "},
+	{"help",&ProgramState::help,"help: lists all the commands"}
+
+};
 
 float ones(float,float) {return 1;}
 float zeros(float,float) {return 0;}
@@ -142,112 +159,171 @@ void ProgramState::listenCommand()
 		istringstream input_parameters (input_string);
 		input_parameters >> cmd;
 
-		if (cmd == "solve")
-			solve();
-		else if (cmd == "quit")
-			return;
-		else if (cmd == "print")
-		{
-			string what;
-			input_parameters >> what;
-			if (cin.fail()) cout << "print what?" << endl;
-			else if (what == "sol")
-			{
-				if (m_solution.isInitialized())
-					cout << m_solution.read( m_solver.queue()) << endl;
-				else
-					cout << "No solution available" << endl;
-			} else if (what == "res")
-			{
-				if (m_residual.isInitialized())
-					cout << m_residual.read( m_solver.queue()) << endl;
-				else
-					cout << "No residuals available" << endl;
-			} else if (what == "err")
-			{
-				if (m_error.isInitialized())
-					cout << m_error.read( m_solver.queue()) << endl;
-				else
-					cout << "No error available" << endl;
-			} else if (what == "func")
-			{
-				if (m_targetFunction.isInitialized())
-					cout << m_targetFunction.read( m_solver.queue()) << endl;
-				else
-					cout << "No function available" << endl;
-			}
-		}
-		else if (cmd == "state")
-		{
-			string solverString;
-			switch (m_curMode)
-			{
-				case Fmg:
-					solverString = "FMG";
-					break;
-				case Smooth:
-					solverString = "Jacobi Smoother";
-					break;
-				case Multigrid:
-					solverString = "Multigrid";
-					break;
-			}
+		for (int i=0;i < sizeof(CommandTable)/sizeof(CommandTableEntry);++i)
+			if ( cmd == CommandTable[i].CmdName)
+				(this->*CommandTable[i].Func) (input_parameters);
 
-			cout << "Current solver: " << solverString << endl <<
-				"Dimension: " << m_dimx <<"x" << m_dimy << endl <<
-				"Pre smooth steps: " << stepA1 << " Post smooth steps: " << stepA2 << endl <<
-				"VCycles: " << VCycles << " Omega: " << m_omega << endl;
-		}
-		else if (cmd == "setdim")
-		{
-			int newdimx,newdimy;
-			input_parameters >> newdimx >> newdimy;
-			if (input_parameters.fail() || newdimx < 0 || newdimy < 0)
-				cout << "Invalid dimensions" << endl;
-			else
-				m_dimx = newdimx,m_dimy = newdimy;
-		}
-		else if (cmd == "setmode")
-		{
-			string mode;
-			input_parameters >> mode;
-			if (input_parameters.fail())
-				cout << "Invalid mode" << endl;
-			if (mode == "fmg")
-				m_curMode = Fmg;
-			else if (mode == "jac")
-				m_curMode = Smooth;
-			else if (mode == "mg")
-				m_curMode = Multigrid;
-			else
-				cout << "Invalid mode" << endl;
-		}
-		else if (cmd == "setsmoothsteps")
-		{
-			int newa1,newa2;
-			input_parameters >> newa1 >> newa2;
-			if (input_parameters.fail() || newa1 < 0 || newa2 < 0)
-				cout << "Invalid parameters" << endl;
-			else
-				stepA1 = newa1,stepA2 = newa2;
-		}
-		else if (cmd == "setomega")
-		{
-			::real omega;
-			input_parameters >> omega;
-			if (input_parameters.fail() || omega < 0 || omega > 2.0)
-				cout << "Invalid omega" << endl;
-			else
-				m_omega = omega;
-		}
-		else
-		{
-			cout << "Unknown command: " << cmd << endl;
-		}
+		if (cmd == "quit") return;
 	}
 }
 
-void ProgramState::solve()
+void ProgramState::setdim( std::istream & params)
+{
+	int newdimx,newdimy;
+	params >> newdimx >> newdimy;
+	if (params.fail() || newdimx < 0 || newdimy < 0)
+		cout << "Invalid dimensions" << endl;
+	else
+		m_dimx = newdimx,m_dimy = newdimy;
+}
+
+void ProgramState::setsmoothsteps(istream& params)
+{
+	int newa1,newa2;
+	params >> newa1 >> newa2;
+	if (params.fail() || newa1 < 0 || newa2 < 0)
+		cout << "Invalid parameters" << endl;
+	else
+		stepA1 = newa1,stepA2 = newa2;
+}
+
+void ProgramState::setmode(istream& params)
+{
+	string mode;
+	params >> mode;
+	if (params.fail())
+		cout << "Invalid mode" << endl;
+	if (mode == "fmg")
+		m_curMode = Fmg;
+	else if (mode == "sor")
+		m_curMode = Smooth;
+	else if (mode == "mg")
+		m_curMode = Multigrid;
+	else
+		cout << "Invalid mode" << endl;
+}
+
+void ProgramState::setvcycles(istream& params)
+{
+	int v;
+	params >> v;
+	if (params.fail() || v < 0)
+		cout << "Invalid number of VCycles" << endl;
+	else
+		VCycles = v;
+}
+
+void ProgramState::setomega( std::istream & params)
+{
+	::real omega;
+	params >> omega;
+	if (params.fail() || omega < 0 || omega > 2.0)
+		cout << "Invalid omega" << endl;
+	else
+		m_omega = omega;
+}
+
+void ProgramState::state( std::istream & params)
+{
+	string solverString;
+	switch (m_curMode)
+	{
+		case Fmg:
+			solverString = "FMG";
+			break;
+		case Smooth:
+			solverString = "Jacobi Smoother";
+			break;
+		case Multigrid:
+			solverString = "Multigrid";
+			break;
+	}
+
+	cout << "Current solver: " << solverString << endl <<
+	"Dimension: " << m_dimx <<"x" << m_dimy << endl <<
+	"Pre smooth steps: " << stepA1 << " Post smooth steps: " << stepA2 << endl <<
+	"VCycles: " << VCycles << " Omega: " << m_omega << endl;
+}
+
+void ProgramState::print( std::istream & params)
+{
+	string what;
+	params >> what;
+	if (cin.fail()) cout << "print what?" << endl;
+	else if (what == "sol")
+	{
+		if (m_solution.isInitialized())
+			cout << m_solution.read( m_solver.queue()) << endl;
+		else
+			cout << "No solution available" << endl;
+	} else if (what == "res")
+	{
+		if (m_residual.isInitialized())
+			cout << m_residual.read( m_solver.queue()) << endl;
+		else
+			cout << "No residuals available" << endl;
+	} else if (what == "err")
+	{
+		if (m_error.isInitialized())
+			cout << m_error.read( m_solver.queue()) << endl;
+		else
+			cout << "No error available" << endl;
+	} else if (what == "func")
+	{
+		if (m_targetFunction.isInitialized())
+			cout << m_targetFunction.read( m_solver.queue()) << endl;
+		else
+			cout << "No function available" << endl;
+	}
+	else cout << "Print what?" << endl;
+}
+
+void ProgramState::quit( std::istream & params)
+{
+	cout << "Quitting..." << endl;
+}
+
+void ProgramState::help( std::istream & params)
+{
+	for (int i=0;i < sizeof(CommandTable)/sizeof(CommandTableEntry);++i)
+		cout << CommandTable[i].Description << endl;
+}
+
+void ProgramState::save(istream& params)
+{
+	string what,filename;
+	params >> what >> filename;
+	if (params.fail()) cout << "Save what where?" << endl;
+
+	Buffer2D * arg =0;
+	if (what == "err") arg = &m_error;
+	else if (what == "res") arg = &m_residual;
+	else if (what == "sol") arg = &m_solution;
+	else
+	{
+		cout << "Save what?" << endl;
+		return;
+	}
+
+	if (!arg->isInitialized())
+	{
+		cout << "Data not initialized yet" << endl;
+		return;
+	}
+
+	if (filename.substr( filename.size()-3) == "bmp")
+		toBitmap(*arg,m_solver.queue(),filename.c_str());
+	else
+	{
+		boost::multi_array< ::real,2> ans = arg->read(m_solver.queue());
+		ofstream outfile(filename.c_str());
+		if (!outfile) cout << "Can not open: " << filename << endl;
+		else
+			outfile << ans << endl;
+	}
+}
+
+void ProgramState::solve(std::istream & is)
 {
 	m_targetFunction = m_funcHandler.discretize(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler);
 	Buffer2D emptyBuf = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
@@ -286,6 +362,8 @@ void ProgramState::solve()
 	m_solver.queue().enqueueBarrier();
 	m_solver.compute_residuals(m_residual,m_solution,m_targetFunction);
 	m_solver.wait();
+
+	toBitmap(m_solution,m_solver.queue(),"test_out.bmp");
 
 	clock_t endTimer = clock();
 

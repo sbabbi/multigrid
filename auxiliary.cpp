@@ -19,6 +19,7 @@
 */
 
 #include "auxiliary.h"
+#include <fstream>
 
 cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim)
 {
@@ -52,7 +53,7 @@ cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim)
 	return cl::NullRange;
 }
 
-cl::Buffer performReduction(cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size)
+cl::Buffer performReduction(const cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size)
 {
 	if (size == 1) return in;
 
@@ -71,7 +72,7 @@ cl::Buffer performReduction(cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & 
 	return performReduction(tmp,ker,q,newsize);
 }
 
-real L2Norm(Buffer2D & in,cl::CommandQueue & q)
+real L2Norm(const Buffer2D & in,cl::CommandQueue & q)
 {
 	cl::Buffer ans (CLContextLoader::getContext(),CL_MEM_READ_WRITE,sizeof(real)*in.width()*in.height());
 
@@ -90,4 +91,135 @@ real L2Norm(Buffer2D & in,cl::CommandQueue & q)
 	real res;
 	q.enqueueReadBuffer(ans,true,0,sizeof(real),&res);
 	return sqrt(res);
+}
+
+Buffer2D fromBitmap(const char* filename)
+{
+	std::ifstream in (filename,std::ios::binary);
+	if (!in) throw std::runtime_error( std::string(filename)+ " Does not exists");
+
+	std::streampos init = in.tellg();
+	struct BitmapFileHeader
+	{
+		uint16_t Signature;
+		uint32_t Size;
+		uint16_t Reserved1;
+		uint16_t Reserved2;
+		uint32_t BitsOffset;
+	} __attribute__ ((packed)) fileHeader;
+
+	assert(sizeof(BitmapFileHeader) == 14);
+
+	struct BitmapInfoHeader
+	{
+		uint32_t HeaderSize;
+		int32_t Width;
+		int32_t Height;
+		uint16_t Planes;
+		uint16_t BitCount;
+		uint32_t Compression;
+		uint32_t SizeImage;
+		int32_t PelsPerMeterX;
+		int32_t PelsPerMeterY;
+		uint32_t ClrUsed;
+		uint32_t ClrImportant;
+	} infoHeader;
+
+	assert(sizeof(BitmapInfoHeader) == 40);
+
+	const uint16_t BitmapSignature = 19778;
+
+	in.read( reinterpret_cast<char*>(&fileHeader),sizeof(fileHeader) );
+	in.read( reinterpret_cast<char*>(&infoHeader),sizeof(infoHeader) );
+	in.ignore( 1 << infoHeader.BitCount); //Ignore palette
+
+	//unsupported
+	if (infoHeader.Compression != 0) throw std::runtime_error("UNSUPPORTED: Bmp compression");
+	if (infoHeader.Height < 0) throw std::runtime_error("UNSUPPORTED: Bmp negative height");
+
+	if(in.fail() || BitmapSignature != fileHeader.Signature) throw std::runtime_error(std::string());
+
+	if (infoHeader.BitCount != 8) throw std::runtime_error("Bitmap not monochrome");
+
+	int w = infoHeader.Width;
+	int h = infoHeader.Height;
+	in.seekg(fileHeader.BitsOffset+init,std::ios::beg);
+
+	boost::multi_array<char,2> buf (boost::extents[h][w]);
+
+	in.read(buf.data(),sizeof(char)*w*h);
+	boost::multi_array<real,2> ans (boost::extents[h][w]);
+	for (int i=0;i < h ;++i) for (int j=0;j < w;++j)
+		ans[i][j] = static_cast<int>(buf[i][j])/255.0;
+	return Buffer2D(w,h,ans.data());
+}
+
+void toBitmap(const Buffer2D& in,cl::CommandQueue & q, const char* filename)
+{
+	std::ofstream out(filename,std::ios::binary);
+	if (!out) throw std::runtime_error(std::string(filename) + " does not exists");
+
+	boost::multi_array<real,2> ans = in.read(q);
+
+	struct BitmapFileHeader
+	{
+		uint16_t Signature;
+		uint32_t Size;
+		uint16_t Reserved1;
+		uint16_t Reserved2;
+		uint32_t BitsOffset;
+	} __attribute__ ((packed)) fileHeader;
+
+	assert(sizeof(BitmapFileHeader) == 14);
+
+	struct BitmapInfoHeader
+	{
+		uint32_t HeaderSize;
+		int32_t Width;
+		int32_t Height;
+		uint16_t Planes;
+		uint16_t BitCount;
+		uint32_t Compression;
+		uint32_t SizeImage;
+		int32_t PelsPerMeterX;
+		int32_t PelsPerMeterY;
+		uint32_t ClrUsed;
+		uint32_t ClrImportant;
+	} infoHeader;
+
+	assert(sizeof(BitmapInfoHeader) == 40);
+
+	fileHeader.Signature = 19778;
+	fileHeader.Size = sizeof(BitmapFileHeader)+sizeof(BitmapInfoHeader)+ sizeof(char)*in.width()*in.height()+256*4;
+	fileHeader.Reserved1 = fileHeader.Reserved2 = 0;
+	fileHeader.BitsOffset = sizeof(BitmapFileHeader)+sizeof(BitmapInfoHeader)+256*4;
+
+	infoHeader.HeaderSize = sizeof(BitmapInfoHeader);
+	infoHeader.Width = in.width();
+	infoHeader.Height = in.height();
+	infoHeader.Planes = 1;
+	infoHeader.BitCount = 8;
+	infoHeader.Compression = 0;
+	infoHeader.SizeImage = in.width()*in.height();
+	infoHeader.PelsPerMeterX = 1;
+	infoHeader.PelsPerMeterY = 1;
+	infoHeader.ClrUsed = 256;
+	infoHeader.ClrImportant = 256;
+
+	out.write(reinterpret_cast<char*>(&fileHeader),sizeof(BitmapFileHeader));
+	out.write(reinterpret_cast<char*>(&infoHeader),sizeof(BitmapInfoHeader));
+
+	for (int i=0;i < 256;++i)
+	{
+		char b[4] = {i,i,i,i};
+		out.write(b,sizeof(b));
+	}
+
+	boost::multi_array<char,2> buf (boost::extents[in.height()][in.width()]);
+
+	real l_norm = LInfNorm(in,q);
+
+	for (int i=0;i < in.height();++i) for (int j=0;j < in.width();++j)
+		buf[i][j] = ans[i][j]*127.0/l_norm  +127;
+	out.write(buf.data(), sizeof(char)*in.height()*in.width());
 }
