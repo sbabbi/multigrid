@@ -11,12 +11,12 @@ using namespace std;
 
 int main(int argc,char ** argv)
 {
-	try
+// 	try
 	{
 		ProgramState ps (argc-1,argv+1);
 		ps.listenCommand();
 	}
-	catch(cl::Error & r)
+/*	catch(cl::Error & r)
 	{
 		cout << "Cl error in " << r.what() << " code: " << r.err() << endl;
 		cout << "Aborting..";
@@ -31,7 +31,7 @@ int main(int argc,char ** argv)
 	{
 		cout << "Unknown error" << endl << endl << "Aborting...";
 		return 1;
-	}
+	}*/
 
 	return 0;
 }

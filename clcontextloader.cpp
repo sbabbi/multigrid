@@ -89,7 +89,7 @@ cl::Program CLContextLoader::loadProgramFromFile(const char * filename)
 	}
 	catch (cl::Error e)
 	{
-		if (e.err() == CL_BUILD_PROGRAM_FAILURE)
+		if (e.err() == CL_BUILD_PROGRAM_FAILURE || e.err() == CL_INVALID_BINARY)
 			throw std::runtime_error(ans.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device));
 		throw;
 	}

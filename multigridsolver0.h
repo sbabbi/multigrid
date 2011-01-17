@@ -26,8 +26,12 @@ class BorderHandler
 {
 public:
 	enum CellType { CellInner,CellOuter,CellDirichlet,CellNeumann };
-	
-	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy) const = 0;
+
+	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy,int bord_dimx,int bord_dimy) = 0;
+	void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy) {
+		compute(queue,ker,dimx,dimy,dimx,dimy);
+	}
+
 	virtual CellType cellType(int x,int y,int dimx,int dimy) const = 0;
 
 private:
@@ -55,7 +59,7 @@ public:
 
 	cl::CommandQueue & queue() {return m_queue;}
 
-	void smoother_iterate(Buffer2D& res, Buffer2D & auxiliary, const Buffer2D& func, float omega, int a1);
+	void smoother_iterate(Buffer2D& res, const Buffer2D& func, float omega, int a1);
 	void compute_residuals(Buffer2D& res,const Buffer2D & input, const Buffer2D& func);
 	void restrict(Buffer2D& res,const Buffer2D & input);
 	void correct_residual(Buffer2D & res,const Buffer2D & input,Buffer2D & residual);

@@ -37,7 +37,8 @@ public:
 private:
 
 	void solve();
-	
+	void helpString();
+
 	SolverMode m_curMode;
 	int m_dimx,m_dimy;
 	int stepA1,stepA2,VCycles;
@@ -47,6 +48,7 @@ private:
 	Buffer2D m_residual;
 	Buffer2D m_error;
 	Buffer2D m_solution;
+	Buffer2D m_targetFunction;
 	RectangularBorderHandler m_handler;
 	MultigridSolver0 m_solver;
 	FunctionHandler m_funcHandler;

@@ -22,14 +22,17 @@
 #define RECTANGULARBORDERHANDLER_H
 
 #include "multigridsolver0.h"
+#include <map>
 
 class RectangularBorderHandler : public BorderHandler
 {
 public:
-	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy) const ;
+	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy,int bord_dimx,int bord_dimy);
 	virtual CellType cellType(int x,int y,int dimx,int dimy) const;
 
 private:
+	void genBuffer(int dimx,int dimy);
+	std::map<std::pair<int,int>,cl::Buffer> m_bufferMap;
 };
 
 #endif // RECTANGULARBORDERHANDLER_H

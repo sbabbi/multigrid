@@ -23,22 +23,33 @@
 
 #include "buffer.h"
 
-Buffer2D perform2DReduction(Buffer2D & in,cl::Kernel & ker,cl::CommandQueue & q,int xtill = 1,int ytill = 1);
+cl::Buffer performReduction(cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size);
 cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim);
 
-inline real L2Norm(Buffer2D & in,cl::CommandQueue & q)
-{
-	return perform2DReduction(in,CLContextLoader::getRedL2NormKer(),q).read(q)[0][0];
-}
+real L2Norm(Buffer2D & in,cl::CommandQueue & q);
 
 inline real LInfNorm(Buffer2D & in,cl::CommandQueue & q)
 {
-	return perform2DReduction(in,CLContextLoader::getRedLInfKer(),q).read(q)[0][0];
+	cl::Buffer buf = performReduction(in.data(),
+							CLContextLoader::getRedLInfKer(),
+							q,
+							in.width()*in.height());
+
+	real ans;
+	q.enqueueReadBuffer(buf,true,0,sizeof(real),&ans);
+	return ans;
 }
 
 inline real Average(Buffer2D & in,cl::CommandQueue & q)
 {
-	return perform2DReduction(in,CLContextLoader::getRedSumAllKer(),q).read(q)[0][0] / (in.width()*in.height());
+	cl::Buffer buf = performReduction(in.data(),
+							CLContextLoader::getRedSumAllKer(),
+							q,
+							in.width()*in.height());
+
+	real ans;
+	q.enqueueReadBuffer(buf,true,0,sizeof(real),&ans);
+	return ans/ (in.width()*in.height());;
 }
 
 #endif //AUXILIARY_H

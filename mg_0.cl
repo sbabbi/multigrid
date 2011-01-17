@@ -6,17 +6,24 @@ typedef struct tagCell {
 	real2 _normals; //MUST BE Manhattan-Normalized
 }Cell;
 
-#define CELL_INSIDE 0
-#define CELL_OUTSIDE 1
-#define CELL_DIRICHLET 2
-#define CELL_NEUMANN 3
+#define CELL_INSIDE 0x1
+#define CELL_OUTSIDE 0x2
+#define CELL_DIRICHLET 0x4
+#define CELL_NEUMANN 0x8
 
 inline int getCellType(const __global read_only Cell * c)
 {
-	if ( c._normals == (real2)(0.0,0.0)) return CELL_INSIDE;
-	if ( c._normals[0] == NAN && c._normals[1] == NAN) return CELL_OUTSIDE;
-	if ( c._normals[0] == NAN) return CELL_DIRICHLET;
+	if ( c->_normals.x == 0.0 && c->_normals.y == 0.0) return CELL_INSIDE;
+	if ( isnan(c->_normals.x) && isnan(c->_normals.y)) return CELL_OUTSIDE;
+	if ( isnan(c->_normals.x)) return CELL_DIRICHLET;
 	return CELL_NEUMANN;
+}
+
+inline int isBorder(const __global read_only Cell * c)
+{
+	int ans = getCellType(c);
+	if (ans == CELL_DIRICHLET || ans == CELL_NEUMANN) return 1;
+	return 0;
 }
 
 /*** Dumped jacobi iteratation ***/
@@ -42,42 +49,59 @@ inline real residual(int base,
 	return src[base +1] + src[base -1] + src[base + xsize] + src[base -xsize] - 4* src[base] - func[base];
 }
 
+/*** Do a red-black gauss seidel iteration ***/
+void do_rbgauss(global read_only Cell * domain,
+			global real * dest,
+			global read_only real * func,
+			real w,
+			int base,
+			int sizex)
+{
+	real val;
+	if ( (get_global_id(0) + get_global_id(1)) % 2== 0)
+	{
+		switch (getCellType(domain+base) )
+		{
+			case CELL_INSIDE:
+				val = jacobi_iteration(base,sizex,dest,func);
+				dest[base] = val * w + (1.0-w)* dest[base];
+				break;
+			case CELL_OUTSIDE:
+				break;
+			case CELL_DIRICHLET:
+				dest[base] = func[base];
+				break;
+			case CELL_NEUMANN:
+				break;
+		}
+	}
+}
 
 /*** iteration_kernel
-	* This kernel computes an iteration of the weighted-jacobi method.
+	* This kernel computes an iteration of the red-black gauss seidel method.
 
 	* domain is a pointer to a bidimensional array of Cell data, which represents the description of the domains and borders
-	* dest is the bidimensional output array
-	* src is the current solution, on which we should perform the iteration
+	* dest is the bidimensional input and output array
 	* func is the target function (on the borders too!)
-	* w is the omega parameter for the dumped jacobi iteration
+	* w is the relaxation parameter
 
 	* Notice that the size of domain,dest,src and func MUST be equal to (int2)(get_global_size(0),get_global_size(1))
 */
 __kernel void iteration_kernel(global read_only Cell * domain,
-							global write_only real * dest,
-							global read_only real * src,
+							global real * dest,
 							global read_only real * func,
 							real w)
 {
 	int base = get_global_id(0) + get_global_size(0)*get_global_id(1);
 	int sizex = get_global_size(0);
 
-	real val;
-	switch (getCellType(domain+base) )
-	{
-	case CELL_INSIDE:
-		val = jacobi_iteration(base,sizex,src,func);
-		dest[base] = val * w + (1.0-w)* src[base];
-		break;
-	case CELL_OUTSIDE
-		break;
-	case CELL_DIRICHLET:
-		dest[base] = src[base];
-		break;
-	case CELL_NEUMANN:
-		break;
-	}
+	if ( (get_global_id(0)+get_global_id(1)) % 2 == 1)
+		do_rbgauss(domain,dest,func,w,base,sizex);
+
+	barrier(CLK_GLOBAL_MEM_FENCE);
+
+	if ( (get_global_id(0)+get_global_id(1)) % 2 == 0)
+		do_rbgauss(domain,dest,func,w,base,sizex);
 }
 
 /*** residual_kernel
@@ -98,7 +122,7 @@ __kernel void residual_kernel(global read_only Cell * domain,
 		case CELL_INSIDE:
 			dest[base] = residual(base,sizex,src,func);
 			break;
-		case CELL_OUTSIZE:
+		case CELL_OUTSIDE:
 			break;
 		case CELL_DIRICHLET:
 			dest[base] = src[base]-func[base];
@@ -108,16 +132,28 @@ __kernel void residual_kernel(global read_only Cell * domain,
 	}
 }
 
-const __global read_only real4 RED_STENCIL[3] = {
-	(1.0/16.0, 1.0/8.0,1.0/16.0,0),
-	(1.0/8.0, 1.0/4.0,1.0/8.0,0),
-	(1.0/16.0, 1.0/8.0,1.0/16.0,0)
+real four_point_stencil_reduction(global read_only Cell * domain,
+						global read_only real * input,
+						int base,
+						int sizex)
+{
+	real4 in = (real4)(input[base],input[base+1],input[base+sizex],input[base+sizex+1]);
+	real4 wg = (real4)(
+		isBorder(domain+base),
+		isBorder(domain+base+1),
+		isBorder(domain+base+sizex),
+		isBorder(domain+base+sizex+1));
+
+	real den = wg.x+wg.y+wg.z+wg.w;
+
+	if (den == 0) return 0.25*(in.x+in.y+in.z+in.w);
+	return dot(wg,in)/den;
 }
 
 /*** reduction_kernel
 	* This kernel computes a Full-weighting reduction of the function passed in src
 
-	* domain as in iteration_kernel. domain size MUST be equal to (int2)(get_global_size(0),get_global_size(1))
+	* domain as in iteration_kernel. domain size MUST be equal to "size"
 	* dest is the output 2d-array, whose size MUST be equal to (int2)(get_global_size(0),get_global_size(1))
 	* src is the input function
 	* size is the size of the INPUT function
@@ -125,32 +161,15 @@ const __global read_only real4 RED_STENCIL[3] = {
 	* Notice that the size of dest MUST be equal to (int2)(get_global_size(0),get_global_size(1))
 	* Also, the destination size MUST be half of the src size
 */
-__kernel void reduction_kernel(global read_only Cell * domain
+__kernel void reduction_kernel(global read_only Cell * domain,
 								global write_only real * dest,
 								global read_only real * src,
 								int2 size)
 {
 	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
-	int destsizex = get_global_id(0);
+	int sourcebase = get_global_id(0)*2 + size.x*get_global_id(1)*2;
 
-	int srcbase = 2*get_global_id(0)+ size.x*2*get_global_id(1);
-	int srcsizex = size.x;
-
-	switch (getCellType(domain+destbase) )
-	{
-	case CELL_INSIDE:
-		dest[destbase] =
-			dot (RED_STENCIL[0],(real4)( src[srcbase-srcsizex-1],src[srcbase-srcsizex],src[srcbase-srcsizex+1],0) ) +
-			dot (RED_STENCIL[1],(real4)( src[srcbase-1],src[srcbase],src[srcbase+1],0) ) +
-			dot (RED_STENCIL[0],(real4)( src[srcbase+srcsizex-1],src[srcbase+srcsizex],src[srcbase+srcsizex+1],0) );
-		break;
-	case CELL_OUTSIDE:
-		break;
-	case CELL_DIRICHLET:
-		break;
-	case CELL_NEUMANN:
-		break;
-	}
+	dest[destbase] = four_point_stencil_reduction(domain,src,sourcebase,size.x);
 }
 
 /*** residual_correct_kernel
@@ -161,55 +180,26 @@ __kernel void reduction_kernel(global read_only Cell * domain
 
 	* Notice that err size must be HALF of dest size.
 ***/
-__kernel void residual_correct_kernel(global read_only Cell * domain
+__kernel void residual_correct_kernel(global read_only Cell * domain,
 										global write_only real * dest,
 										global read_only real * input,
 										global read_only real * err)
 {
 	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
-	int destsizex = get_global_id(0);
 
-	int errsizex = get_global_size(0)/2;
-	int errbase = get_global_id(0)/2 + errsizex*(get_global_id(1)/2);
-	
-	real2 p = (real2)( 0.5 - (get_global_id(0)%2)*(1.0/(2*get_global_id(0))),
-					0.5 - (get_global_id(1)%2)*(1.0/(2*get_global_id(1))) );
+	real val = err[ (get_global_id(0)/2) + (get_global_size(0)/2) * (get_global_id(1)/2) ];
 
-	real2 errCoord = (real2)(get_global_id(0)+0.5,get_global_id(1)+0.5)*p;
-	real2 w = errCoord-floor(errCoord);
-
-	real val = err[errbase] * (1.0-w.x)*(1.0-w.y)+
-				err[errbase+1] * (w.x)*(1.0-w.y)+
-				err[errbase+errsizex] * (1.0-w.x)*w.y +
-				err[errbase+errsizex+1] * w.x*w.y;
-
-
-	dest [destbase] = src[destbase] - val*4;
+	dest [destbase] = input[destbase] - val*4;
 }
 
 /***TODO: Better interpolation ***/
 __kernel void prolongation_kernel(global read_only real2 * border,
-								  global write_only real * dest,
-									  global read_only real * res,
-										int2 size)
+									global write_only real * dest,
+									global read_only real * input)
 {
-	int2 _X = (int2)(get_global_id(0),get_global_id(1));
-	int2 _resSize =  (size-(int2)(1,1))/2 + (int2)(1,1);
+	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
 
-	real val;
+	real val = input[ (get_global_id(0)/2) + (get_global_size(0)/2) * (get_global_id(1)/2) ];
 
-	if ( _X.x % 2 == 0 && _X.y % 2 == 0)
-		val = res [_X.x/2 + _resSize.x * _X.y/2];
-	else if (_X.x % 2 == 1 && _X.y % 2 == 0)
-		val = 0.5* (res[_X.x/2 + _resSize.x * (_X.y/2)] + res[_X.x/2 + 1 + _resSize.x * (_X.y/2)]);
-	else if (_X.x % 2 == 0 && _X.y % 2 == 1)
-		val = 0.5* (res[_X.x/2 + _resSize.x * (_X.y/2)] + res[_X.x/2 + _resSize.x * (_X.y/2+1)]);
-	else
-		val = 0.25*(res[_X.x/2 + _resSize.x * (_X.y/2)] +
-					res[_X.x/2 + _resSize.x * (_X.y/2+1)] +
-					res[_X.x/2 + 1 + _resSize.x * (_X.y/2)] +
-					res[_X.x/2 + 1 + _resSize.x * (_X.y/2+1)]);
-
-
-	dest [ _X.x + size.x * _X.y] = val;
+	dest [destbase] = val;
 }

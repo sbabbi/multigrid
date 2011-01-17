@@ -24,39 +24,70 @@ cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim)
 {
 	static std::vector<size_t> MaxDims = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
-	switch (wsDim.dimensions())
+	static int totMax = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+
+	std::vector<size_t> dims (wsDim.dimensions());
+
+	std::transform(static_cast<const size_t*>(wsDim),static_cast<const size_t*>(wsDim)+wsDim.dimensions(),
+				MaxDims.begin(),dims.begin(),std::min<size_t>);
+
+
+	int prod  = 1;
+	int cnt = 0;
+
+	for (int i=0;i < dims.size();++i) prod*=dims[i];
+
+	while (prod > totMax)
 	{
-		case 1:
-			return cl::NDRange( std::min(wsDim[0],MaxDims[0]) );
-		case 2:
-			return cl::NDRange( std::min(wsDim[0],MaxDims[0]),std::min(wsDim[1],MaxDims[1]));
-		case 3:
-			return cl::NDRange( std::min(wsDim[0],MaxDims[0]),std::min(wsDim[1],MaxDims[1]),std::min(wsDim[2],MaxDims[2]));
-		default:
-			throw std::runtime_error("Wrong dimensions in getBestWorkspaceDim");
+		dims[ (cnt++)%dims.size()]/=2;
+		prod /=2 ;
 	}
+
+	switch (dims.size())
+	{
+	case 1: return cl::NDRange(dims[0]);
+	case 2: return cl::NDRange(dims[0],dims[1]);
+	case 3: return cl::NDRange(dims[0],dims[1],dims[2]);
+	}
+	return cl::NullRange;
 }
 
-Buffer2D perform2DReduction(Buffer2D& in, cl::Kernel & ker,cl::CommandQueue & q,int xtill,int ytill )
+cl::Buffer performReduction(cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size)
 {
-	/*** Reduction kernel arguments ***/
-	/* 	__global read_only real * input,
-		__global write_only real * output,
-		int inputSize,
-		int chunks */
+	if (size == 1) return in;
 
-	if (in.width() <= xtill && in.height() <= ytill)
-		return in;
+	int newsize = std::max(1,size/4);
+	cl::Buffer tmp (CLContextLoader::getContext(),CL_MEM_READ_WRITE,sizeof(real)*newsize);
 
-	Buffer2D aux ( std::max(xtill,in.height()/2),std::max(ytill,in.width()/2));
 	ker.setArg(0,in());
-	ker.setArg(1,aux());
-	ker.setArg(2,in.size());
+	ker.setArg(1,tmp());
+	ker.setArg(2,size);
 	ker.setArg(3,4);
 
-	q.enqueueNDRangeKernel(ker,cl::NDRange(0,0),cl::NDRange(aux.width(),aux.height()),
-													 getBestWorkspaceDim(cl::NDRange(aux.width(),aux.height())));
+	q.enqueueNDRangeKernel(ker,cl::NDRange(0),cl::NDRange(newsize),
+												 getBestWorkspaceDim(cl::NDRange(newsize)));
 	q.enqueueBarrier();
 
-	return perform2DReduction(aux,ker,q,xtill,ytill);
+	return performReduction(tmp,ker,q,newsize);
+}
+
+real L2Norm(Buffer2D & in,cl::CommandQueue & q)
+{
+	cl::Buffer ans (CLContextLoader::getContext(),CL_MEM_READ_WRITE,sizeof(real)*in.width()*in.height());
+
+	CLContextLoader::getRedL2NormKer().setArg(0,in());
+	CLContextLoader::getRedL2NormKer().setArg(1,ans());
+
+	q.enqueueNDRangeKernel(CLContextLoader::getRedL2NormKer(),
+					cl::NDRange(0),
+					cl::NDRange(in.width()*in.height()),
+					getBestWorkspaceDim(cl::NDRange(in.width()*in.height())));
+
+	q.enqueueBarrier();
+
+	ans = performReduction(ans,CLContextLoader::getRedSumAllKer(),q,in.width()*in.height());
+
+	real res;
+	q.enqueueReadBuffer(ans,true,0,sizeof(real),&res);
+	return sqrt(res);
 }

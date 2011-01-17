@@ -19,8 +19,10 @@
 
 #include "multigridsolver0.h"
 #include <iostream>
+
 using namespace std;
 
+std::ostream& operator<<(std::ostream & os,const boost::multi_array< ::real,2> & m);
 
 MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
 	m_theProgram ( CLContextLoader::loadProgram(filename)),
@@ -43,11 +45,10 @@ Buffer2D MultigridSolver0::iterate(Buffer2D & in,
 {
 	assert( in.width() == func.width()&& in.height() == func.height());
 
-	Buffer2D tmp (in.width(),in.height());
-
-	smoother_iterate(in,tmp,func,omega,a1);
+	smoother_iterate(in,func,omega,a1);
 	if (in.width() > 3 && in.height() > 3)
 	{
+		Buffer2D tmp (in.width(),in.height());
 		Buffer2D residuals ( in.width()/2,in.height()/2);
 		Buffer2D i (residuals.width(),residuals.height());
 		for (int k=0;k <v;++k)
@@ -70,7 +71,7 @@ Buffer2D MultigridSolver0::iterate(Buffer2D & in,
 	}
 
 	//Post smooth
-	smoother_iterate(in,tmp,func,omega,a2);
+	smoother_iterate(in,func,omega,a2);
 
 	return in;
 }
@@ -97,24 +98,20 @@ Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
 
 	Buffer2D x0 (func.width(),func.height());
 	prolongate(x0,iGuess);
-
 	return iterate(x0,func,omega,a1,a2,v);
 }
 
-void MultigridSolver0::smoother_iterate(Buffer2D& res, Buffer2D& auxiliary, const Buffer2D& func, float omega, int a1)
+void MultigridSolver0::smoother_iterate(Buffer2D& res, const Buffer2D& func, float omega, int a1)
 {
-	m_iterationKernel.setArg(3,func());
-	m_iterationKernel.setArg(4,omega);
+	m_iterationKernel.setArg(1,res());
+	m_iterationKernel.setArg(2,func());
+	m_iterationKernel.setArg(3,omega);
 
 	for (int i=0;i < a1;++i)
 	{
-		m_iterationKernel.setArg(1,auxiliary());
-		m_iterationKernel.setArg(2,res());
-
 		m_queue.enqueueBarrier();
 		m_Handl.compute(m_queue,m_iterationKernel,res.width(),res.height());
 
-		 std::swap(auxiliary,res);
 	}
 }
 
@@ -135,10 +132,10 @@ void MultigridSolver0::restrict(Buffer2D& res,const Buffer2D& input)
 
 	m_reductionKernel.setArg(1,res());
 	m_reductionKernel.setArg(2,input());
-	m_reductionKernel.setArg(2,input.size());
+	m_reductionKernel.setArg(3,input.size());
 
 	m_queue.enqueueBarrier();
-	m_Handl.compute(m_queue,m_reductionKernel,res.width(),res.height());
+	m_Handl.compute(m_queue,m_reductionKernel,res.width(),res.height(),input.width(),input.height());
 }
 
 void MultigridSolver0::correct_residual(Buffer2D& res,const Buffer2D& input, Buffer2D& residual)
@@ -156,12 +153,11 @@ void MultigridSolver0::correct_residual(Buffer2D& res,const Buffer2D& input, Buf
 
 void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
 {
-	assert(res.width() == (input.width()-1)*2+1);
-	assert(res.height() == (input.height()-1)*2+1);
+	assert(res.width()/2 == input.width());
+	assert(res.height()/2 ==input.height());
 
 	m_prolongationKernel.setArg(1,res());
 	m_prolongationKernel.setArg(2,input());
-	m_prolongationKernel.setArg(3,res.size());
 
 	m_queue.enqueueBarrier();
 	m_Handl.compute(m_queue,m_prolongationKernel,res.width(),res.height());

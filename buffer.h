@@ -82,6 +82,7 @@ public:
 	int width() const {return m_dimx;}
 	int height() const {return m_dimy;}
     cl_int2 size() const {return cl_int2 {m_dimx,m_dimy};}
+    cl::Buffer & data() {return m_data;}
 
 private:
 	int m_dimx;

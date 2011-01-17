@@ -11,22 +11,11 @@ __kernel void zero_memory(__global write_only real * result)
 
 /** Parallel L2-Norm **/
 __kernel void L2Norm(__global read_only real * input,
-					 __global write_only real * output,
-					 int inputSize,
-					 int chunks)
+					 __global write_only real * output)
 {
 	int outPos = get_global_id(0);
-	real res = 0.0;
 
-	int base = outPos*chunks;
-	int end = min(inputSize,base+chunks)
-	for ( ;base < end;++base)
-		res+= input[base]*input[base];
-
-	if (get_global_size(0) == 1)
-		output[outPos] = sqrt(res);
-	else
-		output[outPos] = res;
+	output[outPos] = input[outPos]*input[outPos];
 }
 
 /** Parallel LInf-Norm **/
@@ -39,9 +28,9 @@ __kernel void LInfNorm(__global read_only real * input,
 	real res = 0.0;
 
 	int base = outPos*chunks;
-	int end = min(inputSize,base+chunks)
+	int end = min(inputSize,base+chunks);
 	for ( ;base < end;++base)
-		res+= max(res,input[base]);
+		res = max(res,fabs(input[base]));
 
 	output[outPos] = res;
 }
@@ -54,16 +43,13 @@ __kernel void SumAll(__global read_only real * input,
 {
 	int outPos = get_global_id(0);
 	real res = 0.0;
-	
+
 	int base = outPos*chunks;
-	int end = min(inputSize,base+chunks)
+	int end = min(inputSize,base+chunks);
 	for ( ;base < end;++base)
 		res+= input[base];
-	
-	if (get_global_size(0) == 1)
-		output[outPos] = sqrt(res);
-	else
-		output[outPos] = res;
+
+	output[outPos] = res;
 }
 
 /** Parallel mult by constant **/

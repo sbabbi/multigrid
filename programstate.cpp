@@ -28,6 +28,17 @@ using namespace std;
 float ones(float,float) {return 1;}
 float zeros(float,float) {return 0;}
 
+float prettyFunc1(float x,float y)
+{
+	return -2*( (1-6*x*x)*y*y*(1-y*y)+
+					(1-6*y*y)*x*x*(1-x*x));
+}
+
+float prettyFunc1Sol(float x,float y)
+{
+	return (x*x-x*x*x*x)*(y*y*y*y-y*y);
+}
+
 std::ostream& operator<<(std::ostream & os,const boost::multi_array<float,2> & m)
 {
 	for (int i=0;i < m.shape()[0];++i)
@@ -51,7 +62,7 @@ ProgramState::ProgramState(int argc, char** argv) :
 	m_bDisplayResidual(false),
 	m_bDisplayError(false),
 	m_solver("mg_0.cl",m_handler),
-	m_funcHandler(zeros,ones,ones)
+	m_funcHandler(prettyFunc1,zeros,prettyFunc1Sol)
 {
 	for (int i=0;i < argc;++i)
 	{
@@ -105,6 +116,14 @@ ProgramState::ProgramState(int argc, char** argv) :
 			m_bDisplayResidual = true;
 		else if(string(argv[i]) == "--displayerr")
 			m_bDisplayError = true;
+		else if(string(argv[i]) == "-h" || string(argv[i]) == "--help")
+			helpString();
+		else
+		{
+			cout << "Unkown option " << argv[i] << endl;
+			helpString();
+			abort();
+		}
 	}
 }
 
@@ -112,10 +131,16 @@ void ProgramState::listenCommand()
 {
 	while (1)
 	{
+		cout << fixed << setprecision(5);
 		cout << ">";
+		cin >> noskipws;
 
-		std::string cmd;
-		cin >> cmd;
+		string input_string;
+		std::getline(cin,input_string);
+		string cmd;
+
+		istringstream input_parameters (input_string);
+		input_parameters >> cmd;
 
 		if (cmd == "solve")
 			solve();
@@ -124,7 +149,7 @@ void ProgramState::listenCommand()
 		else if (cmd == "print")
 		{
 			string what;
-			cin >> what;
+			input_parameters >> what;
 			if (cin.fail()) cout << "print what?" << endl;
 			else if (what == "sol")
 			{
@@ -144,25 +169,91 @@ void ProgramState::listenCommand()
 					cout << m_error.read( m_solver.queue()) << endl;
 				else
 					cout << "No error available" << endl;
+			} else if (what == "func")
+			{
+				if (m_targetFunction.isInitialized())
+					cout << m_targetFunction.read( m_solver.queue()) << endl;
+				else
+					cout << "No function available" << endl;
 			}
+		}
+		else if (cmd == "state")
+		{
+			string solverString;
+			switch (m_curMode)
+			{
+				case Fmg:
+					solverString = "FMG";
+					break;
+				case Smooth:
+					solverString = "Jacobi Smoother";
+					break;
+				case Multigrid:
+					solverString = "Multigrid";
+					break;
+			}
+
+			cout << "Current solver: " << solverString << endl <<
+				"Dimension: " << m_dimx <<"x" << m_dimy << endl <<
+				"Pre smooth steps: " << stepA1 << " Post smooth steps: " << stepA2 << endl <<
+				"VCycles: " << VCycles << " Omega: " << m_omega << endl;
 		}
 		else if (cmd == "setdim")
 		{
 			int newdimx,newdimy;
-			cin >> newdimx >> newdimy;
-			if (cin.fail() || newdimx < 0 || newdimy < 0)
+			input_parameters >> newdimx >> newdimy;
+			if (input_parameters.fail() || newdimx < 0 || newdimy < 0)
 				cout << "Invalid dimensions" << endl;
 			else
 				m_dimx = newdimx,m_dimy = newdimy;
+		}
+		else if (cmd == "setmode")
+		{
+			string mode;
+			input_parameters >> mode;
+			if (input_parameters.fail())
+				cout << "Invalid mode" << endl;
+			if (mode == "fmg")
+				m_curMode = Fmg;
+			else if (mode == "jac")
+				m_curMode = Smooth;
+			else if (mode == "mg")
+				m_curMode = Multigrid;
+			else
+				cout << "Invalid mode" << endl;
+		}
+		else if (cmd == "setsmoothsteps")
+		{
+			int newa1,newa2;
+			input_parameters >> newa1 >> newa2;
+			if (input_parameters.fail() || newa1 < 0 || newa2 < 0)
+				cout << "Invalid parameters" << endl;
+			else
+				stepA1 = newa1,stepA2 = newa2;
+		}
+		else if (cmd == "setomega")
+		{
+			::real omega;
+			input_parameters >> omega;
+			if (input_parameters.fail() || omega < 0 || omega > 2.0)
+				cout << "Invalid omega" << endl;
+			else
+				m_omega = omega;
+		}
+		else
+		{
+			cout << "Unknown command: " << cmd << endl;
 		}
 	}
 }
 
 void ProgramState::solve()
 {
-	Buffer2D targetFunction = m_funcHandler.discretize(m_dimx,m_dimy,0.1,m_handler);
+	m_targetFunction = m_funcHandler.discretize(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler);
 	Buffer2D emptyBuf = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
 	m_solution = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
+	m_residual = Buffer2D(m_dimx,m_dimy);
+	m_error = Buffer2D(m_dimx,m_dimy);
 	m_solver.queue().enqueueBarrier();
 
 	clock_t startTimer = clock();
@@ -170,7 +261,7 @@ void ProgramState::solve()
 	switch (m_curMode)
 	{
 	case Fmg:
-		m_solver.fmg(targetFunction,
+		m_solution = m_solver.fmg(m_targetFunction,
 						m_omega,
 						stepA1,
 						stepA2,
@@ -178,32 +269,42 @@ void ProgramState::solve()
 		break;
 	case Smooth:
 		m_solver.smoother_iterate(m_solution,
-								  emptyBuf,
-								  targetFunction,
+								  m_targetFunction,
 								  m_omega,
 								  stepA1);
 		break;
 	case Multigrid:
 		m_solver.iterate(m_solution,
-						 targetFunction,
+						 m_targetFunction,
 						 m_omega,
 						 stepA1,
 						 stepA2,
 						 VCycles);
 		break;
-		
+
 	}
 	m_solver.queue().enqueueBarrier();
-	m_solver.compute_residuals(m_residual,m_solution,targetFunction);
+	m_solver.compute_residuals(m_residual,m_solution,m_targetFunction);
 	m_solver.wait();
 
 	clock_t endTimer = clock();
 
-	cout << fixed << setprecision(5);
 	cout << "Time\t\t\tL2Err\t\t\tLInfErr\t\t\tL2Res\t\t\tLinfRes\t\t\t" << endl;
 	cout << (double)(endTimer-startTimer)/CLOCKS_PER_SEC << "\t\t\t" <<
 		m_funcHandler.L2Error(m_solution,m_solver.queue()) << "\t\t\t" <<
 		m_funcHandler.LInfError(m_solution,m_solver.queue()) << "\t\t\t" <<
 		L2Norm(m_residual,m_solver.queue()) << "\t\t\t" <<
 		LInfNorm(m_residual,m_solver.queue()) << endl;
+}
+
+void ProgramState::helpString()
+{
+	cout << "Usage: multigrid [options] " << endl;
+	cout << "Valid options are: " << endl;
+	cout << "\t \"--solver solvertype\": set the solver type. 'fmg' for a Fast multigrid solver, 'jac' for the Jacobi method, 'mg' for the simple multigrid method" << endl
+	<< "\t \"--dim dimx dimy\": set the dimension of the grid to be used" << endl
+	<< "\t \"--smoothstep a1 a2\": sets the number of steps of pre and post smoothing. For simple jacobi method only the first value is used" << endl
+	<< "\t \"--mgcycles v\": sets the number of v-cycles to be used (1= V Cycle, 2 = W Cycle)" << endl
+	<< "\t \"--help\" \"-h\": prints this help" << endl
+	<< endl;
 }
