@@ -52,6 +52,15 @@ __kernel void SumAll(__global read_only real * input,
 	output[outPos] = res;
 }
 
+/*** Parallel vector difference **/
+__kernel void Diff(__global write_only real * output,
+				   __global read_only real * a,
+				   __global read_only real * b)
+{
+	int idx = get_global_id(0);
+	output[idx] = a[idx]-b[idx];
+}
+
 /** Parallel mult by constant **/
 __kernel void Mult(__global read_only real * input,
 				   __global write_only real * output,

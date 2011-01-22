@@ -60,6 +60,7 @@ CLContextLoader::CLContextLoader()
 	m_RedL2Norm = cl::Kernel(m_commonKernelsProg,"L2Norm");
 	m_MultKer = cl::Kernel(m_commonKernelsProg,"Mult");
 	m_RedLInfKer = cl::Kernel(m_commonKernelsProg,"LInfNorm");
+	m_DiffKer = cl::Kernel(m_commonKernelsProg,"Diff");
 }
 
 cl::Program CLContextLoader::loadProgramFromFile(const char * filename)

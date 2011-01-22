@@ -27,10 +27,7 @@ class BorderHandler
 public:
 	enum CellType { CellInner,CellOuter,CellDirichlet,CellNeumann };
 
-	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy,int bord_dimx,int bord_dimy) = 0;
-	void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy) {
-		compute(queue,ker,dimx,dimy,dimx,dimy);
-	}
+	virtual void setarg(int arg,cl::Kernel & ker,int dimx,int dimy) = 0;
 
 	virtual CellType cellType(int x,int y,int dimx,int dimy) const = 0;
 
@@ -65,6 +62,9 @@ public:
 	void correct_residual(Buffer2D & res,const Buffer2D & input,Buffer2D & residual);
 	void prolongate(Buffer2D & res,const Buffer2D & input);
 	void zero_mem(Buffer2D & res);
+	void zero_out(Buffer2D & res);
+
+	bool m_debugPrintResiduals;
 
 private:
 	cl::Program m_theProgram;
@@ -74,6 +74,8 @@ private:
 	cl::Kernel m_reductionKernel;
 	cl::Kernel m_residualCorrectKernel;
 	cl::Kernel m_prolongationKernel;
+	cl::Kernel m_zeroOutKernel;
+	cl::Buffer m_emptyBuf;
 
 	cl::CommandQueue m_queue;
 

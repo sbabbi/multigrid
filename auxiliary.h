@@ -22,6 +22,7 @@
 #define AUXILIARY_H
 
 #include "buffer.h"
+#include <cassert>
 
 cl::Buffer performReduction(const cl::Buffer & in,cl::Kernel & ker,cl::CommandQueue & q,int size);
 cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim);
@@ -50,6 +51,21 @@ inline real Average(Buffer2D & in,cl::CommandQueue & q)
 	real ans;
 	q.enqueueReadBuffer(buf,true,0,sizeof(real),&ans);
 	return ans/ (in.width()*in.height());;
+}
+
+inline Buffer2D Difference(const Buffer2D & a,const Buffer2D & b,cl::CommandQueue & q)
+{
+	assert (a.width() == b.width() && a.height() == b.height());
+
+	cl::NDRange dim ( a.width()*a.height());
+	Buffer2D ans (a.width(),a.height());
+
+	CLContextLoader::getDiffKer().setArg(0,ans());
+	CLContextLoader::getDiffKer().setArg(1,a());
+	CLContextLoader::getDiffKer().setArg(2,b());
+	q.enqueueNDRangeKernel( CLContextLoader::getDiffKer(),cl::NDRange(0),dim,getBestWorkspaceDim(dim));
+
+	return ans;
 }
 
 Buffer2D fromBitmap(const char * filename);

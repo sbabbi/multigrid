@@ -22,7 +22,7 @@
 #define BUFFER_H
 
 #include "clcontextloader.h"
-#include <boost/multi_array.hpp>
+#include "multi_array.h"
 
 class Buffer2D {
 public:
@@ -67,9 +67,9 @@ public:
 		return res;
 	}
 
-	boost::multi_array<real,2> read(cl::CommandQueue & q) const
+	BidimArray<real> read(cl::CommandQueue & q) const
 	{
-		boost::multi_array<real,2> ans (boost::extents[m_dimy][m_dimx]);
+		BidimArray<real> ans (m_dimx,m_dimy);
 
 		q.enqueueReadBuffer(m_data,true,0,sizeof(real)*m_dimx*m_dimy,ans.data());
 		return ans;
@@ -132,9 +132,9 @@ public:
 		return res;
 	}
 
-	boost::multi_array<real,3> read (cl::CommandQueue & q) const
+	TridimArray<real> read (cl::CommandQueue & q) const
 	{
-		boost::multi_array<real,3> ans (boost::extents[m_dimz][m_dimy][m_dimx]);
+		TridimArray<real> ans (m_dimx,m_dimy,m_dimz);
 
 		q.enqueueReadBuffer(m_data,true,0,sizeof(real)*m_dimx*m_dimy*m_dimz,ans.data());
 		return ans;

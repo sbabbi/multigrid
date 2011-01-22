@@ -47,6 +47,7 @@ private:
 	void help( std::istream & params);
 	void solve( std::istream & params);
 	void save( std::istream & params);
+	void reduce(std::istream & params);
 
 	void helpString();
 
@@ -55,6 +56,7 @@ private:
 	int stepA1,stepA2,VCycles;
 	real m_omega;
 	bool m_bDisplaySolution,m_bDisplayResidual,m_bDisplayError;
+	bool m_bProfilingMode;
 
 	Buffer2D m_residual;
 	Buffer2D m_error;

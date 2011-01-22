@@ -18,11 +18,12 @@
 */
 
 #include "multigridsolver0.h"
+#include "auxiliary.h"
 #include <iostream>
 
 using namespace std;
 
-std::ostream& operator<<(std::ostream & os,const boost::multi_array< ::real,2> & m);
+std::ostream& operator<<(std::ostream & os,const BidimArray< ::real> & m);
 
 MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
 	m_theProgram ( CLContextLoader::loadProgram(filename)),
@@ -31,8 +32,10 @@ MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
 	m_reductionKernel(m_theProgram,"reduction_kernel"),
 	m_residualCorrectKernel(m_theProgram,"residual_correct_kernel"),
 	m_prolongationKernel(m_theProgram,"prolongation_kernel"),
-	m_queue( CLContextLoader::getContext(),CLContextLoader::getDevice(),CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE),
-	m_Handl(handl)
+	m_zeroOutKernel(m_theProgram,"zero_out"),
+	m_queue( CLContextLoader::getContext(),CLContextLoader::getDevice()),
+	m_Handl(handl),
+	m_debugPrintResiduals(false)
 {
 }
 
@@ -49,13 +52,20 @@ Buffer2D MultigridSolver0::iterate(Buffer2D & in,
 	if (in.width() > 3 && in.height() > 3)
 	{
 		Buffer2D tmp (in.width(),in.height());
-		Buffer2D residuals ( in.width()/2,in.height()/2);
+		Buffer2D residuals ( (in.width()+1)/2,(in.height()+1)/2);
 		Buffer2D i (residuals.width(),residuals.height());
+
 		for (int k=0;k <v;++k)
 		{
 			zero_mem(i);
 			//Compute residuals
 			compute_residuals(tmp,in,func);
+
+			if (m_debugPrintResiduals)
+			{
+				::real ans = L2Norm(tmp,m_queue);
+				cout << "DEBUG, printing residuals on grid: " << in.width() <<"x" << in.height() << " k= " <<k << " BEFORE correction res= "<< ans << endl;
+			}
 
 			//Restrict residuals
 			restrict(residuals,tmp);
@@ -65,6 +75,14 @@ Buffer2D MultigridSolver0::iterate(Buffer2D & in,
 
 			//Prolungate residuals
 			correct_residual(tmp,in,i);
+
+			if (m_debugPrintResiduals)
+			{
+				Buffer2D deb(in.width(),in.height());
+				compute_residuals(deb,tmp,func);
+				::real ans = L2Norm(deb,m_queue);
+				cout << "DEBUG, printing residuals on grid: " << in.width() <<"x" << in.height() << " k= " <<k << " AFTER correction res= "<< ans << endl;
+			}
 
 			std::swap(in,tmp);
 		}
@@ -91,7 +109,7 @@ Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
 		return iterate(x0,func,omega,a1,a2,v);
 	}
 
-	Buffer2D red_func (func.width()/2,func.height()/2);
+	Buffer2D red_func ( (func.width()+1)/2,(func.height()+1)/2);
 	restrict(red_func,func);
 
 	Buffer2D iGuess = fmg(red_func,omega,a1,a2,v);
@@ -103,15 +121,24 @@ Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
 
 void MultigridSolver0::smoother_iterate(Buffer2D& res, const Buffer2D& func, float omega, int a1)
 {
+	m_Handl.setarg(0,m_iterationKernel,res.width(),res.height());
 	m_iterationKernel.setArg(1,res());
 	m_iterationKernel.setArg(2,func());
 	m_iterationKernel.setArg(3,omega);
 
+	cl_int2 dim = {res.width(),res.height()};
+	m_iterationKernel.setArg(4, dim);
+
+	cl::NDRange dims ( dim.x/2 + dim.x%2,dim.y);
+	cl::NDRange wsDim = getBestWorkspaceDim(dims);
+
 	for (int i=0;i < a1;++i)
 	{
-		m_queue.enqueueBarrier();
-		m_Handl.compute(m_queue,m_iterationKernel,res.width(),res.height());
+		m_iterationKernel.setArg(5,0);
+		m_queue.enqueueNDRangeKernel(m_iterationKernel,cl::NDRange(0,0),dims,wsDim);
 
+		m_iterationKernel.setArg(5,1);
+		m_queue.enqueueNDRangeKernel(m_iterationKernel,cl::NDRange(0,0),dims,wsDim);
 	}
 }
 
@@ -121,51 +148,62 @@ void MultigridSolver0::compute_residuals(Buffer2D& res, const Buffer2D& input, c
 	m_residualKernel.setArg(2,input());
 	m_residualKernel.setArg(3,func());
 
-	m_queue.enqueueBarrier();
-	m_Handl.compute(m_queue,m_residualKernel,res.width(),res.height());
+	m_Handl.setarg(0,m_residualKernel, res.width(),res.height());
+	m_queue.enqueueNDRangeKernel(m_residualKernel,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),
+																getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
 void MultigridSolver0::restrict(Buffer2D& res,const Buffer2D& input)
 {
-	assert(res.width() == input.width()/2);
-	assert(res.height() == input.height()/2);
+// 	assert(res.width() == input.width()/2);
+// 	assert(res.height() == input.height()/2);
 
 	m_reductionKernel.setArg(1,res());
 	m_reductionKernel.setArg(2,input());
 	m_reductionKernel.setArg(3,input.size());
 
-	m_queue.enqueueBarrier();
-	m_Handl.compute(m_queue,m_reductionKernel,res.width(),res.height(),input.width(),input.height());
+	m_Handl.setarg(0,m_reductionKernel,input.width(),input.height());
+	m_queue.enqueueNDRangeKernel(m_reductionKernel,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),
+																				getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
 void MultigridSolver0::correct_residual(Buffer2D& res,const Buffer2D& input, Buffer2D& residual)
 {
-	assert(input.width()/2 == residual.width());
-	assert(input.height()/2 == residual.height());
+// 	assert(input.width()/2 == residual.width());
+// 	assert(input.height()/2 == residual.height());
 
 	m_residualCorrectKernel.setArg(1,res());
 	m_residualCorrectKernel.setArg(2,input());
 	m_residualCorrectKernel.setArg(3,residual());
 
-	m_queue.enqueueBarrier();
-	m_Handl.compute(m_queue,m_residualCorrectKernel,res.width(),res.height());
+	m_Handl.setarg(0,m_residualCorrectKernel,res.width(),res.height());
+	m_queue.enqueueNDRangeKernel(m_residualCorrectKernel,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),
+																					  getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
 void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
 {
-	assert(res.width()/2 == input.width());
-	assert(res.height()/2 ==input.height());
+// 	assert(res.width()/2 == input.width());
+// 	assert(res.height()/2 ==input.height());
 
 	m_prolongationKernel.setArg(1,res());
 	m_prolongationKernel.setArg(2,input());
 
-	m_queue.enqueueBarrier();
-	m_Handl.compute(m_queue,m_prolongationKernel,res.width(),res.height());
+	m_Handl.setarg(0,m_prolongationKernel,res.width(),res.height());
+	m_queue.enqueueNDRangeKernel(m_prolongationKernel,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),
+																				   getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
 void MultigridSolver0::zero_mem(Buffer2D& res)
 {
 	CLContextLoader::getZeroMemKer().setArg(0,res());
-	m_queue.enqueueBarrier();
 	m_queue.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),cl::NDRange(0),cl::NDRange(res.width()*res.height()),cl::NDRange(1));
+}
+
+void MultigridSolver0::zero_out(Buffer2D& res)
+{
+	m_Handl.setarg(0,m_zeroOutKernel,res.width(),res.height());
+	m_zeroOutKernel.setArg(1,res());
+	m_queue.enqueueNDRangeKernel(m_zeroOutKernel,cl::NDRange(0,0),cl::NDRange(res.width(),res.height()),
+								 getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }

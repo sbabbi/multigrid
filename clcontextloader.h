@@ -26,11 +26,23 @@
 #include <CL/cl.hpp>
 #include <iostream>
 
+#ifdef USE_DOUBLE
+
+typedef cl_double real;
+typedef cl_double2 real2;
+typedef cl_double4 real4;
+typedef cl_double8 real8;
+typedef cl_double16 real16;
+
+#else
+
 typedef cl_float real;
 typedef cl_float2 real2;
 typedef cl_float4 real4;
 typedef cl_float8 real8;
 typedef cl_float16 real16;
+
+#endif //USE_DOUBLE
 
 class CLContextLoader
 {
@@ -42,6 +54,7 @@ public:
 	static cl::Kernel& getRedSumAllKer() {return instance().m_RedSumAll;}
 	static cl::Kernel& getRedLInfKer() {return instance().m_RedLInfKer;}
 	static cl::Kernel& getMultKer() {return instance().m_MultKer;}
+	static cl::Kernel& getDiffKer() {return instance().m_DiffKer;}
 	static cl::Program loadProgram(const char * filename) {return instance().loadProgramFromFile(filename);}
 
 protected:
@@ -65,6 +78,7 @@ protected:
 	cl::Kernel m_RedSumAll;
 	cl::Kernel m_RedLInfKer;
 	cl::Kernel m_MultKer;
+	cl::Kernel m_DiffKer;
 
 };
 

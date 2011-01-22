@@ -20,9 +20,12 @@
 
 #include "auxiliary.h"
 #include "programstate.h"
+#include <cmath>
+#include <limits>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 
 using namespace std;
 
@@ -38,6 +41,7 @@ ProgramState::CommandTableEntry ProgramState::CommandTable[] =
 	{"state",&ProgramState::state,"state: prints the current state of the solver"},
 	{"setvcycles",&ProgramState::setvcycles,"setvcycles: set the number of cycles for multigrid and FMG methods"},
 	{"save",&ProgramState::save,"save what filename: save (sol err res) to the output file \"filename\" "},
+	{"reduce",&ProgramState::reduce,"reduce what: reduce (sol err res)"},
 	{"help",&ProgramState::help,"help: lists all the commands"}
 
 };
@@ -56,12 +60,37 @@ float prettyFunc1Sol(float x,float y)
 	return (x*x-x*x*x*x)*(y*y*y*y-y*y);
 }
 
-std::ostream& operator<<(std::ostream & os,const boost::multi_array<float,2> & m)
+float prettyFunc2(float x,float y)
 {
-	for (int i=0;i < m.shape()[0];++i)
+	return exp(10*x)*cos(10*y);
+}
+
+float sinfunc1(float x,float y)
+{
+	return -M_PI*M_PI*2* sin(M_PI*x)*sin(M_PI*y);
+}
+
+float sinfunc1sol(float x,float y)
+{
+	return sin(M_PI*x)*sin(M_PI*y);
+}
+
+float charge(float x,float y)
+{
+	if (x == 0.5 && y == 0.5) return 1;
+	if (x == 0.25 && y == 0.25) return 1;
+	if (x == 0.25 && y == 0.75) return 1;
+	if (x == 0.75 && y == 0.25) return 1;
+	if (x == 0.75 && y == 0.75) return 1;
+	return 0;
+}
+
+std::ostream& operator<<(std::ostream & os,const BidimArray<real> & m)
+{
+	for (int i=0;i < m.width();++i)
 	{
-		for (int j=0;j < m.shape()[1];++j)
-			os << m[i][j] << " ";
+		for (int j=0;j < m.height();++j)
+			os << m(i,j) << " ";
 		os << std::endl;
 	}
 	return os;
@@ -78,8 +107,11 @@ ProgramState::ProgramState(int argc, char** argv) :
 	m_bDisplaySolution(false),
 	m_bDisplayResidual(false),
 	m_bDisplayError(false),
+	m_bProfilingMode(false),
 	m_solver("mg_0.cl",m_handler),
+// 	m_funcHandler(charge,zeros)
 	m_funcHandler(prettyFunc1,zeros,prettyFunc1Sol)
+// 	m_funcHandler(zeros,prettyFunc2,prettyFunc2)
 {
 	for (int i=0;i < argc;++i)
 	{
@@ -102,13 +134,13 @@ ProgramState::ProgramState(int argc, char** argv) :
 		{
 			m_dimx = atoi(argv[++i]);
 			m_dimy = atoi(argv[++i]);
-			if (m_dimx <=0 || m_dimy >= 0)
+			if (m_dimx <=0 || m_dimy <= 0)
 			{
 				cout << "Dimensions not valid" << endl;
 				exit(1);
 			}
 		}
-		else if(string(argv[i]) == "--smoothstep")
+		else if(string(argv[i]) == "--smoothsteps")
 		{
 			stepA1 = atoi(argv[++i]);
 			stepA2 = atoi(argv[++i]);
@@ -135,6 +167,17 @@ ProgramState::ProgramState(int argc, char** argv) :
 			m_bDisplayError = true;
 		else if(string(argv[i]) == "-h" || string(argv[i]) == "--help")
 			helpString();
+		else if(string(argv[i]) == "--profiling")
+			m_bProfilingMode = true;
+		else if(string(argv[i]) == "--omega")
+		{
+			m_omega = atof(argv[++i]);
+			if (m_omega < 0 || m_omega >= 2)
+			{
+				cout << "Invalid omega" << endl;
+				exit(1);
+			}
+		}
 		else
 		{
 			cout << "Unkown option " << argv[i] << endl;
@@ -142,13 +185,22 @@ ProgramState::ProgramState(int argc, char** argv) :
 			abort();
 		}
 	}
+
+// 	m_solver.m_debugPrintResiduals = true;
 }
 
 void ProgramState::listenCommand()
 {
+// 	cout << fixed << setprecision(5);
+	cout << "Real epsilon is: " << std::numeric_limits<real>::epsilon() << endl;
+	if (m_bProfilingMode)
+	{
+		istringstream in;
+		solve(in);
+		return;
+	}
 	while (1)
 	{
-		cout << fixed << setprecision(5);
 		cout << ">";
 		cin >> noskipws;
 
@@ -159,9 +211,14 @@ void ProgramState::listenCommand()
 		istringstream input_parameters (input_string);
 		input_parameters >> cmd;
 
+		bool done = false;
 		for (int i=0;i < sizeof(CommandTable)/sizeof(CommandTableEntry);++i)
 			if ( cmd == CommandTable[i].CmdName)
+			{
 				(this->*CommandTable[i].Func) (input_parameters);
+				done = true;
+			}
+		if (!done) cout << "Unknown command: " << cmd << endl;
 
 		if (cmd == "quit") return;
 	}
@@ -299,6 +356,7 @@ void ProgramState::save(istream& params)
 	if (what == "err") arg = &m_error;
 	else if (what == "res") arg = &m_residual;
 	else if (what == "sol") arg = &m_solution;
+	else if (what == "func") arg = &m_targetFunction;
 	else
 	{
 		cout << "Save what?" << endl;
@@ -311,11 +369,11 @@ void ProgramState::save(istream& params)
 		return;
 	}
 
-	if (filename.substr( filename.size()-3) == "bmp")
+	if (filename.size() > 4 && filename.substr( filename.size()-3) == "bmp")
 		toBitmap(*arg,m_solver.queue(),filename.c_str());
 	else
 	{
-		boost::multi_array< ::real,2> ans = arg->read(m_solver.queue());
+		BidimArray< ::real> ans = arg->read(m_solver.queue());
 		ofstream outfile(filename.c_str());
 		if (!outfile) cout << "Can not open: " << filename << endl;
 		else
@@ -323,14 +381,56 @@ void ProgramState::save(istream& params)
 	}
 }
 
+void ProgramState::reduce(istream& params)
+{
+	string what;
+	params >> what;
+
+	Buffer2D * p = 0;
+	if (cin.fail()) cout << "reduce what?" << endl;
+	else if (what == "sol")
+	{
+		if (m_solution.isInitialized())
+			p = &m_solution;
+		else
+			cout << "No solution available" << endl;
+	} else if (what == "res")
+	{
+		if (m_residual.isInitialized())
+			p = &m_residual;
+		else
+			cout << "No residuals available" << endl;
+	} else if (what == "err")
+	{
+		if (m_error.isInitialized())
+			p = &m_error;
+		else
+			cout << "No error available" << endl;
+	} else if (what == "func")
+	{
+		if (m_targetFunction.isInitialized())
+			p = &m_targetFunction;
+		else
+			cout << "No function available" << endl;
+	}
+	else cout << "Reduce what?" << endl;
+
+	if (p)
+	{
+		Buffer2D s (p->width()/2+1,p->height()/2+1);
+		m_solver.restrict(s,*p);
+		*p = s;
+	}
+}
+
+
 void ProgramState::solve(std::istream & is)
 {
-	m_targetFunction = m_funcHandler.discretize(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler);
+	m_targetFunction = m_funcHandler.discretize_func(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler);
 	Buffer2D emptyBuf = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
 	m_solution = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
 	m_residual = Buffer2D(m_dimx,m_dimy);
 	m_error = Buffer2D(m_dimx,m_dimy);
-	m_solver.queue().enqueueBarrier();
 
 	clock_t startTimer = clock();
 
@@ -359,7 +459,10 @@ void ProgramState::solve(std::istream & is)
 		break;
 
 	}
-	m_solver.queue().enqueueBarrier();
+	m_solver.zero_out(m_solution);
+
+	if (m_funcHandler.hasSol())
+		m_error = Difference(m_solution, m_funcHandler.discretize_sol(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler),m_solver.queue());
 	m_solver.compute_residuals(m_residual,m_solution,m_targetFunction);
 	m_solver.wait();
 
@@ -369,8 +472,8 @@ void ProgramState::solve(std::istream & is)
 
 	cout << "Time\t\t\tL2Err\t\t\tLInfErr\t\t\tL2Res\t\t\tLinfRes\t\t\t" << endl;
 	cout << (double)(endTimer-startTimer)/CLOCKS_PER_SEC << "\t\t\t" <<
-		m_funcHandler.L2Error(m_solution,m_solver.queue()) << "\t\t\t" <<
-		m_funcHandler.LInfError(m_solution,m_solver.queue()) << "\t\t\t" <<
+		L2Norm(m_error,m_solver.queue()) << "\t\t\t" <<
+		LInfNorm(m_error,m_solver.queue())<< "\t\t\t" <<
 		L2Norm(m_residual,m_solver.queue()) << "\t\t\t" <<
 		LInfNorm(m_residual,m_solver.queue()) << endl;
 }
@@ -381,8 +484,10 @@ void ProgramState::helpString()
 	cout << "Valid options are: " << endl;
 	cout << "\t \"--solver solvertype\": set the solver type. 'fmg' for a Fast multigrid solver, 'jac' for the Jacobi method, 'mg' for the simple multigrid method" << endl
 	<< "\t \"--dim dimx dimy\": set the dimension of the grid to be used" << endl
-	<< "\t \"--smoothstep a1 a2\": sets the number of steps of pre and post smoothing. For simple jacobi method only the first value is used" << endl
+	<< "\t \"--smoothsteps a1 a2\": sets the number of steps of pre and post smoothing. For simple jacobi method only the first value is used" << endl
 	<< "\t \"--mgcycles v\": sets the number of v-cycles to be used (1= V Cycle, 2 = W Cycle)" << endl
+	<< "\t \"--omega o\": sets the omega parameter" << endl
+	<< "\t \"--profiling\": profiling mode: print solution data and exits immediatly" << endl
 	<< "\t \"--help\" \"-h\": prints this help" << endl
 	<< endl;
 }

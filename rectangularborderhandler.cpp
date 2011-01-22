@@ -20,6 +20,7 @@
 
 #include "rectangularborderhandler.h"
 #include "auxiliary.h"
+#include <limits>
 
 typedef struct tagCell {
 	real2 _normals; //MUST BE Manhattan-Normalized
@@ -33,35 +34,31 @@ BorderHandler::CellType RectangularBorderHandler::cellType(int x, int y, int dim
 }
 
 
-void RectangularBorderHandler::compute(cl::CommandQueue& queue, cl::Kernel& ker, int dimx, int dimy,int bord_dimx,int bord_dimy)
+void RectangularBorderHandler::setarg(int arg,cl::Kernel& ker, int dimx, int dimy)
 {
-	if (m_bufferMap.find(std::make_pair(bord_dimx,bord_dimy)) == m_bufferMap.end())
-		genBuffer(bord_dimx,bord_dimy);
+	if (m_bufferMap.find(std::make_pair(dimx,dimy)) == m_bufferMap.end())
+		genBuffer(dimx,dimy);
 
-	ker.setArg(0,m_bufferMap.at(std::make_pair(bord_dimx,bord_dimy)) ());
-
-	cl::NDRange wsDim = getBestWorkspaceDim(cl::NDRange(dimx,dimy));
-
-	queue.enqueueNDRangeKernel(ker,cl::NDRange(0,0),cl::NDRange(dimx,dimy),wsDim);
+	ker.setArg(arg,m_bufferMap.at(std::make_pair(dimx,dimy)) ());
 }
 
 void RectangularBorderHandler::genBuffer(int dimx, int dimy)
 {
-	boost::multi_array<Cell,2> buf (boost::extents[dimy][dimx]);
+	BidimArray<Cell> buf (dimx,dimy);
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 	{
 		real2 val = {0,0};
-		buf[j][i]._normals = val;
+		buf(i,j)._normals = val;
 	}
 
 	Cell c;
 	real2 val = {std::numeric_limits<real>::quiet_NaN(),1};
 	c._normals = val;
 	for (int i=0;i < dimx;++i)
-		buf[0][i] = buf[dimy-1][i] = c;
+		buf(i,0) = buf(i,dimy-1) = c;
 	for (int j=0;j < dimy;++j)
-		buf[j][0] = buf[j][dimx-1] = c;
+		buf(0,j) = buf(dimx-1,j) = c;
 
 	m_bufferMap.insert( std::make_pair (std::make_pair(dimx,dimy),
 								cl::Buffer(CLContextLoader::getContext(),

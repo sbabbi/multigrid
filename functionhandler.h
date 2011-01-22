@@ -35,11 +35,14 @@ public:
 												m_pSol(solution)
 	{}
 
-	Buffer2D discretize(int dimx,int dimy,real dh,const BorderHandler & bord);
+	Buffer2D discretize_func(int dimx,int dimy,real dh,const BorderHandler & bord);
+	Buffer2D discretize_sol(int dimx,int dimy,real dh,const BorderHandler & bord);
 	real L2Error(Buffer2D& ans, cl::CommandQueue& q);
 	real LInfError(Buffer2D & ans, cl::CommandQueue& q);
 
-	boost::multi_array<real,2> solution(int dimx,int dimy);
+	BidimArray<real> solution(int dimx,int dimy);
+
+	bool hasSol() const {return m_pSol;}
 
 private:
 	Function2D m_pFunc;

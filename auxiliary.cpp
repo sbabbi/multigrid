@@ -19,10 +19,14 @@
 */
 
 #include "auxiliary.h"
+#include "multi_array.h"
+#include <cmath>
 #include <fstream>
+#include <stdexcept>
 
 cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim)
 {
+	return cl::NullRange;
 	static std::vector<size_t> MaxDims = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
 	static int totMax = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
@@ -67,7 +71,6 @@ cl::Buffer performReduction(const cl::Buffer & in,cl::Kernel & ker,cl::CommandQu
 
 	q.enqueueNDRangeKernel(ker,cl::NDRange(0),cl::NDRange(newsize),
 												 getBestWorkspaceDim(cl::NDRange(newsize)));
-	q.enqueueBarrier();
 
 	return performReduction(tmp,ker,q,newsize);
 }
@@ -83,8 +86,6 @@ real L2Norm(const Buffer2D & in,cl::CommandQueue & q)
 					cl::NDRange(0),
 					cl::NDRange(in.width()*in.height()),
 					getBestWorkspaceDim(cl::NDRange(in.width()*in.height())));
-
-	q.enqueueBarrier();
 
 	ans = performReduction(ans,CLContextLoader::getRedSumAllKer(),q,in.width()*in.height());
 
@@ -145,12 +146,12 @@ Buffer2D fromBitmap(const char* filename)
 	int h = infoHeader.Height;
 	in.seekg(fileHeader.BitsOffset+init,std::ios::beg);
 
-	boost::multi_array<char,2> buf (boost::extents[h][w]);
-
+	BidimArray<char> buf (w,h);
 	in.read(buf.data(),sizeof(char)*w*h);
-	boost::multi_array<real,2> ans (boost::extents[h][w]);
+
+	BidimArray<real> ans (w,h);
 	for (int i=0;i < h ;++i) for (int j=0;j < w;++j)
-		ans[i][j] = static_cast<int>(buf[i][j])/255.0;
+		ans(j,i) = static_cast<int>(buf(j,i))/255.0;
 	return Buffer2D(w,h,ans.data());
 }
 
@@ -159,7 +160,7 @@ void toBitmap(const Buffer2D& in,cl::CommandQueue & q, const char* filename)
 	std::ofstream out(filename,std::ios::binary);
 	if (!out) throw std::runtime_error(std::string(filename) + " does not exists");
 
-	boost::multi_array<real,2> ans = in.read(q);
+	BidimArray<real> ans = in.read(q);
 
 	struct BitmapFileHeader
 	{
@@ -189,8 +190,10 @@ void toBitmap(const Buffer2D& in,cl::CommandQueue & q, const char* filename)
 
 	assert(sizeof(BitmapInfoHeader) == 40);
 
+	int dimx = in.width() + (4-in.width()%4)%4;
+
 	fileHeader.Signature = 19778;
-	fileHeader.Size = sizeof(BitmapFileHeader)+sizeof(BitmapInfoHeader)+ sizeof(char)*in.width()*in.height()+256*4;
+	fileHeader.Size = sizeof(BitmapFileHeader)+sizeof(BitmapInfoHeader)+ sizeof(char)*dimx*in.height()+256*4;
 	fileHeader.Reserved1 = fileHeader.Reserved2 = 0;
 	fileHeader.BitsOffset = sizeof(BitmapFileHeader)+sizeof(BitmapInfoHeader)+256*4;
 
@@ -200,7 +203,7 @@ void toBitmap(const Buffer2D& in,cl::CommandQueue & q, const char* filename)
 	infoHeader.Planes = 1;
 	infoHeader.BitCount = 8;
 	infoHeader.Compression = 0;
-	infoHeader.SizeImage = in.width()*in.height();
+	infoHeader.SizeImage = dimx*in.height();
 	infoHeader.PelsPerMeterX = 1;
 	infoHeader.PelsPerMeterY = 1;
 	infoHeader.ClrUsed = 256;
@@ -215,11 +218,17 @@ void toBitmap(const Buffer2D& in,cl::CommandQueue & q, const char* filename)
 		out.write(b,sizeof(b));
 	}
 
-	boost::multi_array<char,2> buf (boost::extents[in.height()][in.width()]);
+	BidimArray<char> buf (dimx,in.height());
 
 	real l_norm = LInfNorm(in,q);
 
-	for (int i=0;i < in.height();++i) for (int j=0;j < in.width();++j)
-		buf[i][j] = ans[i][j]*127.0/l_norm  +127;
-	out.write(buf.data(), sizeof(char)*in.height()*in.width());
+
+	for (int j=0;j < buf.height();++j)
+	{
+		for (int i=0;i < ans.width();++i)
+			buf(i,j) =  255*fabs(ans(i,j))/l_norm;
+		for (int i= ans.width();i < buf.width();++i)
+			buf(i,j) = 0;
+	}
+	out.write(buf.data(), sizeof(char)*buf.height()*buf.width());
 }

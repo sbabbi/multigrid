@@ -27,7 +27,7 @@
 class RectangularBorderHandler : public BorderHandler
 {
 public:
-	virtual void compute(cl::CommandQueue & queue,cl::Kernel & ker,int dimx,int dimy,int bord_dimx,int bord_dimy);
+	virtual void setarg(int arg, cl::Kernel& ker, int dimx, int dimy);
 	virtual CellType cellType(int x,int y,int dimx,int dimy) const;
 
 private:
