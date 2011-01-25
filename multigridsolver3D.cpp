@@ -123,19 +123,9 @@ void MultigridSolver3D::smoother_iterate(Buffer3D& res, const Buffer3D& func, re
 	for (int i=0;i < a1;++i)
 	{
 		m_iterationKernel.setArg(5,0);
-		m_iterationKernel.setArg(6,0);
 		m_queue.enqueueNDRangeKernel(m_iterationKernel,cl::NDRange(0,0,0),dims,wsDim);
 
 		m_iterationKernel.setArg(5,1);
-		m_iterationKernel.setArg(6,0);
-		m_queue.enqueueNDRangeKernel(m_iterationKernel,cl::NDRange(0,0,0),dims,wsDim);
-
-		m_iterationKernel.setArg(5,0);
-		m_iterationKernel.setArg(6,1);
-		m_queue.enqueueNDRangeKernel(m_iterationKernel,cl::NDRange(0,0,0),dims,wsDim);
-
-		m_iterationKernel.setArg(5,1);
-		m_iterationKernel.setArg(6,1);
 		m_queue.enqueueNDRangeKernel(m_iterationKernel,cl::NDRange(0,0,0),dims,wsDim);
 	}
 }

@@ -93,14 +93,12 @@ __kernel void iteration_kernel(global read_only Cell * domain,
 							global read_only real * func,
 							real w,
 							int4 size,
-							int odd1,
-							int odd2)
+							int odd1)
 {
 	int base = 2*get_global_id(0) + (odd1+get_global_id(1))%2 + size.x*get_global_id(1) +
-			size.y*size.x*(2*get_global_id(2)+odd2);
+			size.y*size.x*get_global_id(2);
 
-	if (2*get_global_id(0) + (odd1+get_global_id(1))%2 >= size.x ||
-			2*get_global_id(2)+odd2 >= size.z) return;
+	if (2*get_global_id(0) + (odd1+get_global_id(1))%2 >= size.x) return;
 
 	do_rbgauss(domain,dest,func,w,base,size.x,size.x*size.y);
 }
