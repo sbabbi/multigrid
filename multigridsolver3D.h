@@ -17,37 +17,37 @@
 
 */
 
-#ifndef MULTIGRIDSOLVER0_H
-#define MULTIGRIDSOLVER0_H
+#ifndef MULTIGRIDSOLVER1_H
+#define MULTIGRIDSOLVER1_H
 
 #include "buffer.h"
 
-class BorderHandler
+class BorderHandler3D
 {
 public:
 	enum CellType { CellInner,CellOuter,CellDirichlet,CellNeumann };
 
-	virtual void setarg(int arg,cl::Kernel & ker,int dimx,int dimy) = 0;
+	virtual void setarg(int arg,cl::Kernel & ker,int dimx,int dimy,int dimz) = 0;
 
-	virtual CellType cellType(int x,int y,int dimx,int dimy) const = 0;
+	virtual CellType cellType(int x,int y,int z,int dimx,int dimy,int dimz) const = 0;
 
 private:
 };
 
-class MultigridSolver0
+class MultigridSolver3D
 {
 public:
-	MultigridSolver0(const char * filename,BorderHandler & handl);
+	MultigridSolver3D(const char * filename,BorderHandler3D & handl);
 
-	Buffer2D iterate(Buffer2D & in,
-					const Buffer2D & func,
-					 float omega = 2.0/3.0,
+	Buffer3D iterate(Buffer3D & in,
+					const Buffer3D & func,
+					 real omega = 2.0/3.0,
 					 int a1 = 4,
 					 int a2 = 4,
 					 int v = 1);
 
-	Buffer2D fmg(const Buffer2D & func,
-			float omega = 2.0/3.0,
+	Buffer3D fmg(const Buffer3D & func,
+			real omega = 2.0/3.0,
 			int a1 = 4,
 			int a2 = 4,
 			int v = 1);
@@ -56,15 +56,13 @@ public:
 
 	cl::CommandQueue & queue() {return m_queue;}
 
-	void smoother_iterate(Buffer2D& res, const Buffer2D& func, float omega, int a1);
-	void compute_residuals(Buffer2D& res,const Buffer2D & input, const Buffer2D& func);
-	void restrict(Buffer2D& res,const Buffer2D & input);
-	void correct_residual(Buffer2D & res,const Buffer2D & input,Buffer2D & residual);
-	void prolongate(Buffer2D & res,const Buffer2D & input);
-	void zero_mem(Buffer2D & res);
-	void zero_out(Buffer2D & res);
-
-	bool m_debugPrintResiduals;
+	void smoother_iterate(Buffer3D& res, const Buffer3D& func, real omega, int a1);
+	void compute_residuals(Buffer3D& res,const Buffer3D & input, const Buffer3D& func);
+	void restrict(Buffer3D& res,const Buffer3D & input);
+	void correct_residual(Buffer3D & res,const Buffer3D & input,Buffer3D & residual);
+	void prolongate(Buffer3D & res,const Buffer3D & input);
+	void zero_mem(Buffer3D & res);
+	void zero_out(Buffer3D & res);
 
 private:
 	cl::Program m_theProgram;
@@ -79,7 +77,7 @@ private:
 
 	cl::CommandQueue m_queue;
 
-	BorderHandler & m_Handl;
+	BorderHandler3D & m_Handl;
 };
 
-#endif // MULTIGRIDSOLVER0_H
+#endif // MULTIGRIDSOLVER1_H

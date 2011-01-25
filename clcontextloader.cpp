@@ -86,7 +86,12 @@ cl::Program CLContextLoader::loadProgramFromFile(const char * filename)
 
 	std::vector<cl::Device> devices (1,m_device);
 	try {
-		ans.build(devices);
+		std::string options = ""; //-cl-strict-aliasing -cl-mad-enable -cl-fast-relaxed-math";
+
+#ifdef USE_DOUBLE
+		options+=" -DUSE_DOUBLE");
+#endif //USE_DOUBLE
+		ans.build(devices,options.c_str());
 	}
 	catch (cl::Error e)
 	{

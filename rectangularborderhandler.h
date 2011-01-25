@@ -21,10 +21,11 @@
 #ifndef RECTANGULARBORDERHANDLER_H
 #define RECTANGULARBORDERHANDLER_H
 
-#include "multigridsolver0.h"
+#include "multigridsolver2D.h"
+#include "multigridsolver3D.h"
 #include <map>
 
-class RectangularBorderHandler : public BorderHandler
+class RectangularBorderHandler : public BorderHandler2D
 {
 public:
 	virtual void setarg(int arg, cl::Kernel& ker, int dimx, int dimy);
@@ -33,6 +34,28 @@ public:
 private:
 	void genBuffer(int dimx,int dimy);
 	std::map<std::pair<int,int>,cl::Buffer> m_bufferMap;
+};
+
+class ParallelepipedalBorderHandler : public BorderHandler3D
+{
+public:
+	virtual void setarg(int arg, cl::Kernel& ker, int dimx, int dimy,int dimz);
+	virtual CellType cellType(int x,int y,int z,int dimx,int dimy,int dimz) const;
+
+private:
+	void genBuffer(int dimx,int dimy,int dimz);
+
+	struct tri {
+		int x,y,z;
+		tri(int _x,int _y,int _z) : x(_x),y(_y),z(_z) {}
+
+		bool operator<(const tri & r) const{
+			if (x != r.x) return x < r.x;
+			if (y != r.y) return y < r.y;
+			return z < r.z;
+		}
+	};
+	std::map<tri,cl::Buffer> m_bufferMap;
 };
 
 #endif // RECTANGULARBORDERHANDLER_H

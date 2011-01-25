@@ -24,6 +24,8 @@
 #include "clcontextloader.h"
 #include "multi_array.h"
 
+cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim);
+
 class Buffer2D {
 public:
 	enum WriteMode {
@@ -51,6 +53,7 @@ public:
 		m_dimx = r.m_dimx;
 		m_dimy = r.m_dimy;
 		m_data = r.m_data;
+		return *this;
 	}
 
 	bool isInitialized() {return m_dimx != 0 && m_dimy != 0;}
@@ -62,7 +65,7 @@ public:
 		q.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),
 														 cl::NDRange(0),
 														 cl::NDRange(w*h),
-														 cl::NullRange,
+														 getBestWorkspaceDim(cl::NDRange(w*h)),
 														 0);
 		return res;
 	}
@@ -81,7 +84,12 @@ public:
 
 	int width() const {return m_dimx;}
 	int height() const {return m_dimy;}
-    cl_int2 size() const {return cl_int2 {m_dimx,m_dimy};}
+    cl_int2 size() const {
+		cl_int2 ans;
+		ans.s[0] = m_dimx;
+		ans.s[1] = m_dimy;
+		return ans;
+	}
     const cl::Buffer & data() const {return m_data;}
 
 private:
@@ -98,6 +106,8 @@ public:
 		ReadOnly = CL_MEM_READ_ONLY,
 		ReadWrite = CL_MEM_READ_WRITE
 	};
+
+	Buffer3D() : m_dimx(0),m_dimy(0),m_dimz(0) {}
 
 	Buffer3D(int w,int h,int d,WriteMode m = ReadWrite) : m_dimx(w),m_dimy(h),m_dimz(d),
 		m_data(CLContextLoader::getContext(),
@@ -117,7 +127,10 @@ public:
 		m_dimy = r.m_dimy;
 		m_dimz = r.m_dimz;
 		m_data = r.m_data;
+		return *this;
 	}
+
+	bool isInitialized() {return m_dimx != 0 && m_dimy != 0 && m_dimz != 0;}
 
 	static Buffer3D empty(int w,int h,int d,cl::CommandQueue & q)
 	{
@@ -127,7 +140,7 @@ public:
 		q.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),
 														 cl::NDRange(0),
 														 cl::NDRange(w*h*d),
-														 cl::NullRange,
+														 getBestWorkspaceDim(cl::NDRange(w*h*d)),
 														 0);
 		return res;
 	}
@@ -147,7 +160,16 @@ public:
 	int width() const {return m_dimx;}
 	int height() const {return m_dimy;}
 	int depth() const {return m_dimz;}
-    cl_int4 size() const {return cl_int4 {m_dimx,m_dimy,m_dimz,1};}
+    cl_int4 size() const {
+		cl_int4 ans;
+		ans.s[0] = m_dimx;
+		ans.s[1] = m_dimy;
+		ans.s[2] = m_dimz;
+		ans.s[3] = 1;
+		return ans;
+	}
+
+	const cl::Buffer & data() const {return m_data;}
 
 private:
 	int m_dimx;

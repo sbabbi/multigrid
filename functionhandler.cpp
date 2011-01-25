@@ -22,36 +22,36 @@
 #include <cmath>
 #include <stdexcept>
 
-Buffer2D FunctionHandler::discretize_func(int dimx, int dimy, real dh, const BorderHandler& bord)
+Buffer2D FunctionHandler2D::discretize_func(int dimx, int dimy, real dh, const BorderHandler2D& bord)
 {
 	BidimArray<real> buf (dimx,dimy);
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 		switch (bord.cellType(i,j,dimx,dimy))
 		{
-		case BorderHandler::CellInner:
+		case BorderHandler2D::CellInner:
 			buf(i,j)= m_pFunc( (real)(i)/(dimx-1), (real)(j)/(dimy-1) )*dh*dh;
 			break;
-		case BorderHandler::CellOuter:
+		case BorderHandler2D::CellOuter:
 			break;
-		case BorderHandler::CellDirichlet:
+		case BorderHandler2D::CellDirichlet:
 			buf(i,j) = m_pBord( (real)(i)/(dimx-1), (real)(j)/(dimy-1) );
 			break;
-		case BorderHandler::CellNeumann:
+		case BorderHandler2D::CellNeumann:
 			buf(i,j) = m_pBord( (real)(i)/(dimx-1), (real)(j)/(dimy-1) )*dh;
 			break;
 		}
 	return Buffer2D(dimx,dimy,buf.data(),Buffer2D::ReadOnly);
 }
 
-Buffer2D FunctionHandler::discretize_sol(int dimx, int dimy, real dh, const BorderHandler& bord)
+Buffer2D FunctionHandler2D::discretize_sol(int dimx, int dimy, real dh, const BorderHandler2D& bord)
 {
 	BidimArray<real> buf (dimx,dimy);
 
 	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
 		switch (bord.cellType(i,j,dimx,dimy))
 		{
-			case BorderHandler::CellOuter:
+			case BorderHandler2D::CellOuter:
 				buf(i,j) = 0;
 				break;
 			default:
@@ -61,38 +61,41 @@ Buffer2D FunctionHandler::discretize_sol(int dimx, int dimy, real dh, const Bord
 	return Buffer2D(dimx,dimy,buf.data(),Buffer2D::ReadOnly);
 }
 
-real FunctionHandler::L2Error(Buffer2D& ans,cl::CommandQueue & q)
+Buffer3D FunctionHandler3D::discretize_func(int dimx, int dimy,int dimz, real dh, const BorderHandler3D & bord)
 {
-	if (!m_pSol) throw std::runtime_error("Can not compute L2Error without a known solution");
+	TridimArray<real> buf (dimx,dimy,dimz);
 
-	real l2err = 0;
-	int dimx = ans.width();
-	int dimy = ans.height();
-	BidimArray<real> res = ans.read(q);
-
-	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
-	{
-		real val = m_pSol( (real)(i)/(dimx-1), (real)(j)/(dimy-1) );
-		real err = val - res(i,j);
-		l2err += (err*err);
-	}
-	return sqrt(l2err);
+	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j) for (int k=0;k < dimz;++k)
+		switch (bord.cellType(i,j,k,dimx,dimy,dimz))
+		{
+			case BorderHandler3D::CellInner:
+				buf(i,j,k)= m_pFunc( (real)(i)/(dimx-1), (real)(j)/(dimy-1),(real)(k)/(dimz-1) )*dh*dh;
+				break;
+			case BorderHandler3D::CellOuter:
+				break;
+			case BorderHandler3D::CellDirichlet:
+				buf(i,j,k) = m_pBord( (real)(i)/(dimx-1), (real)(j)/(dimy-1),(real)(k)/(dimz-1) );
+				break;
+			case BorderHandler3D::CellNeumann:
+				buf(i,j,k) = m_pBord( (real)(i)/(dimx-1), (real)(j)/(dimy-1),(real)(k)/(dimz-1) )*dh;
+				break;
+		}
+	return Buffer3D(dimx,dimy,dimz,buf.data(),Buffer3D::ReadOnly);
 }
 
-real FunctionHandler::LInfError(Buffer2D& ans,cl::CommandQueue & q)
+Buffer3D FunctionHandler3D::discretize_sol(int dimx, int dimy,int dimz, real dh, const BorderHandler3D& bord)
 {
-	if (!m_pSol) throw std::runtime_error("Can not compute L2Error without a known solution");
+	TridimArray<real> buf (dimx,dimy,dimz);
 
-	real linferr = 0;
-	int dimx = ans.width();
-	int dimy = ans.height();
-	BidimArray<real>  res = ans.read(q);
-
-	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j)
-	{
-		real val = m_pSol( (real)(i)/(dimx-1), (real)(j)/(dimy-1) );
-		real err = fabs(val - res(i,j));
-		linferr = std::max(linferr,err);
-	}
-	return linferr;
+	for (int i=0;i < dimx;++i) for (int j=0;j < dimy;++j) for (int k=0;k < dimz;++k)
+		switch (bord.cellType(i,j,k,dimx,dimy,dimz))
+		{
+			case BorderHandler3D::CellOuter:
+				buf(i,j,k) = 0;
+				break;
+			default:
+				buf(i,j,k) = m_pSol( (real)(i)/(dimx-1), (real)(j)/(dimy-1),(real)(k)/(dimz-1) );
+				break;
+		}
+	return Buffer3D(dimx,dimy,dimz,buf.data(),Buffer3D::ReadOnly);
 }

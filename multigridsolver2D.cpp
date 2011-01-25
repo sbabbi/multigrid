@@ -17,7 +17,7 @@
 
 */
 
-#include "multigridsolver0.h"
+#include "multigridsolver2D.h"
 #include "auxiliary.h"
 #include <iostream>
 
@@ -25,7 +25,7 @@ using namespace std;
 
 std::ostream& operator<<(std::ostream & os,const BidimArray< ::real> & m);
 
-MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
+MultigridSolver2D::MultigridSolver2D(const char* filename, BorderHandler2D& handl) :
 	m_theProgram ( CLContextLoader::loadProgram(filename)),
 	m_iterationKernel(m_theProgram,"iteration_kernel"),
 	m_residualKernel(m_theProgram,"residual_kernel"),
@@ -39,9 +39,9 @@ MultigridSolver0::MultigridSolver0(const char* filename, BorderHandler& handl) :
 {
 }
 
-Buffer2D MultigridSolver0::iterate(Buffer2D & in,
+Buffer2D MultigridSolver2D::iterate(Buffer2D & in,
 								   const Buffer2D& func,
-								   float omega,
+								   real omega,
 								   int a1,
 								   int a2,
 								   int v)
@@ -94,8 +94,8 @@ Buffer2D MultigridSolver0::iterate(Buffer2D & in,
 	return in;
 }
 
-Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
-								   float omega,
+Buffer2D MultigridSolver2D::fmg(const Buffer2D& func,
+								   real omega,
 								   int a1,
 								   int a2,
 								   int v)
@@ -114,12 +114,15 @@ Buffer2D MultigridSolver0::fmg(const Buffer2D& func,
 
 	Buffer2D iGuess = fmg(red_func,omega,a1,a2,v);
 
+	m_queue.enqueueBarrier();
+
 	Buffer2D x0 (func.width(),func.height());
 	prolongate(x0,iGuess);
+
 	return iterate(x0,func,omega,a1,a2,v);
 }
 
-void MultigridSolver0::smoother_iterate(Buffer2D& res, const Buffer2D& func, float omega, int a1)
+void MultigridSolver2D::smoother_iterate(Buffer2D& res, const Buffer2D& func, real omega, int a1)
 {
 	m_Handl.setarg(0,m_iterationKernel,res.width(),res.height());
 	m_iterationKernel.setArg(1,res());
@@ -129,7 +132,7 @@ void MultigridSolver0::smoother_iterate(Buffer2D& res, const Buffer2D& func, flo
 	cl_int2 dim = {res.width(),res.height()};
 	m_iterationKernel.setArg(4, dim);
 
-	cl::NDRange dims ( dim.x/2 + dim.x%2,dim.y);
+	cl::NDRange dims ( dim.s[0]/2 + dim.s[0]%2,dim.s[1]);
 	cl::NDRange wsDim = getBestWorkspaceDim(dims);
 
 	for (int i=0;i < a1;++i)
@@ -142,7 +145,7 @@ void MultigridSolver0::smoother_iterate(Buffer2D& res, const Buffer2D& func, flo
 	}
 }
 
-void MultigridSolver0::compute_residuals(Buffer2D& res, const Buffer2D& input, const Buffer2D& func)
+void MultigridSolver2D::compute_residuals(Buffer2D& res, const Buffer2D& input, const Buffer2D& func)
 {
 	m_residualKernel.setArg(1,res());
 	m_residualKernel.setArg(2,input());
@@ -153,7 +156,7 @@ void MultigridSolver0::compute_residuals(Buffer2D& res, const Buffer2D& input, c
 																getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
-void MultigridSolver0::restrict(Buffer2D& res,const Buffer2D& input)
+void MultigridSolver2D::restrict(Buffer2D& res,const Buffer2D& input)
 {
 // 	assert(res.width() == input.width()/2);
 // 	assert(res.height() == input.height()/2);
@@ -167,7 +170,7 @@ void MultigridSolver0::restrict(Buffer2D& res,const Buffer2D& input)
 																				getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
-void MultigridSolver0::correct_residual(Buffer2D& res,const Buffer2D& input, Buffer2D& residual)
+void MultigridSolver2D::correct_residual(Buffer2D& res,const Buffer2D& input, Buffer2D& residual)
 {
 // 	assert(input.width()/2 == residual.width());
 // 	assert(input.height()/2 == residual.height());
@@ -181,7 +184,7 @@ void MultigridSolver0::correct_residual(Buffer2D& res,const Buffer2D& input, Buf
 																					  getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
-void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
+void MultigridSolver2D::prolongate(Buffer2D& res,const Buffer2D& input)
 {
 // 	assert(res.width()/2 == input.width());
 // 	assert(res.height()/2 ==input.height());
@@ -194,13 +197,13 @@ void MultigridSolver0::prolongate(Buffer2D& res,const Buffer2D& input)
 																				   getBestWorkspaceDim(cl::NDRange(res.width(),res.height())));
 }
 
-void MultigridSolver0::zero_mem(Buffer2D& res)
+void MultigridSolver2D::zero_mem(Buffer2D& res)
 {
 	CLContextLoader::getZeroMemKer().setArg(0,res());
 	m_queue.enqueueNDRangeKernel(CLContextLoader::getZeroMemKer(),cl::NDRange(0),cl::NDRange(res.width()*res.height()),cl::NDRange(1));
 }
 
-void MultigridSolver0::zero_out(Buffer2D& res)
+void MultigridSolver2D::zero_out(Buffer2D& res)
 {
 	m_Handl.setarg(0,m_zeroOutKernel,res.width(),res.height());
 	m_zeroOutKernel.setArg(1,res());

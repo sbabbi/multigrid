@@ -21,24 +21,23 @@
 #ifndef FUNCTIONHANDLER_H
 #define FUNCTIONHANDLER_H
 
-#include "multigridsolver0.h"
+#include "multigridsolver2D.h"
+#include "multigridsolver3D.h"
 
 typedef real (*Function2D)(real,real);
 
-class FunctionHandler
+class FunctionHandler2D
 {
 public:
-	FunctionHandler( Function2D f,
+	FunctionHandler2D( Function2D f,
 				  Function2D borders,
 				  Function2D solution = 0) : m_pFunc(f),
 												m_pBord(borders),
 												m_pSol(solution)
 	{}
 
-	Buffer2D discretize_func(int dimx,int dimy,real dh,const BorderHandler & bord);
-	Buffer2D discretize_sol(int dimx,int dimy,real dh,const BorderHandler & bord);
-	real L2Error(Buffer2D& ans, cl::CommandQueue& q);
-	real LInfError(Buffer2D & ans, cl::CommandQueue& q);
+	Buffer2D discretize_func(int dimx,int dimy,real dh,const BorderHandler2D & bord);
+	Buffer2D discretize_sol(int dimx,int dimy,real dh,const BorderHandler2D & bord);
 
 	BidimArray<real> solution(int dimx,int dimy);
 
@@ -48,6 +47,31 @@ private:
 	Function2D m_pFunc;
 	Function2D m_pBord;
 	Function2D m_pSol;
+};
+
+typedef real (*Function3D)(real,real,real);
+
+class FunctionHandler3D
+{
+public:
+	FunctionHandler3D( Function3D f,
+				  Function3D borders,
+				  Function3D solution = 0) : m_pFunc(f),
+												m_pBord(borders),
+												m_pSol(solution)
+	{}
+
+	Buffer3D discretize_func(int dimx,int dimy,int dimz,real dh,const BorderHandler3D & bord);
+	Buffer3D discretize_sol(int dimx,int dimy,int dimz,real dh,const BorderHandler3D & bord);
+
+	BidimArray<real> solution(int dimx,int dimy,int dimz);
+
+	bool hasSol() const {return m_pSol;}
+
+private:
+	Function3D m_pFunc;
+	Function3D m_pBord;
+	Function3D m_pSol;
 };
 
 #endif // FUNCTIONHANDLER_H

@@ -21,7 +21,8 @@
 #ifndef PROGRAMSTATE_H
 #define PROGRAMSTATE_H
 
-#include "multigridsolver0.h"
+#include "multigridsolver2D.h"
+#include "multigridsolver3D.h"
 #include "rectangularborderhandler.h"
 #include "functionhandler.h"
 
@@ -36,6 +37,18 @@ public:
 
 private:
 
+#ifdef BIDIM
+	typedef Buffer2D Buffer;
+	typedef RectangularBorderHandler RecBorderHandler;
+	typedef MultigridSolver2D Solver;
+	typedef FunctionHandler2D FuncHandler;
+#else
+	typedef Buffer3D Buffer;
+	typedef ParallelepipedalBorderHandler RecBorderHandler;
+	typedef MultigridSolver3D Solver;
+	typedef FunctionHandler3D FuncHandler;
+#endif //BIDIM
+
 	void setdim( std::istream & params);
 	void setsmoothsteps( std::istream & params);
 	void setmode( std::istream & params);
@@ -48,23 +61,29 @@ private:
 	void solve( std::istream & params);
 	void save( std::istream & params);
 	void reduce(std::istream & params);
+	void prolongate(std::istream & params);
 
 	void helpString();
 
 	SolverMode m_curMode;
 	int m_dimx,m_dimy;
+
+#ifndef BIDIM
+	int m_dimz;
+#endif //BIDIM
+
 	int stepA1,stepA2,VCycles;
 	real m_omega;
 	bool m_bDisplaySolution,m_bDisplayResidual,m_bDisplayError;
 	bool m_bProfilingMode;
 
-	Buffer2D m_residual;
-	Buffer2D m_error;
-	Buffer2D m_solution;
-	Buffer2D m_targetFunction;
-	RectangularBorderHandler m_handler;
-	MultigridSolver0 m_solver;
-	FunctionHandler m_funcHandler;
+	Buffer m_residual;
+	Buffer m_error;
+	Buffer m_solution;
+	Buffer m_targetFunction;
+	RecBorderHandler m_handler;
+	Solver m_solver;
+	FuncHandler m_funcHandler;
 
 	struct CommandTableEntry
 	{

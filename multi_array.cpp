@@ -33,6 +33,7 @@ BidimArray<_T>& BidimArray<_T>::operator=(const BidimArray& r)
 		std::copy(r._data,r._data+r.m_dimx*r.m_dimy,_data);
 	m_dimx = r.m_dimx;
 	m_dimy = r.m_dimy;
+	return *this;
 }
 
 template<class _T>
@@ -56,6 +57,7 @@ TridimArray<_T>& TridimArray<_T>::operator=(const TridimArray& r)
 	m_dimx = r.m_dimx;
 	m_dimy = r.m_dimy;
 	m_dimz = r.m_dimz;
+	return *this;
 }
 
 template<class _T>

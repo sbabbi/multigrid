@@ -22,15 +22,74 @@
 #include "multi_array.h"
 #include <cmath>
 #include <fstream>
+#include <map>
 #include <stdexcept>
+#include <set>
+
+#ifdef _WIN32
+#include <cstdint>
+#endif //_WIN32
+
+std::vector<size_t> factor(int n)
+{
+	std::vector<size_t> ans;
+	ans.push_back(n);
+	for (size_t i = n/2 ;i >= 1;--i)
+		if (n % i == 0)
+			ans.push_back(i);
+		return ans;
+}
+
+std::vector<size_t> maximize(std::vector< std::vector<size_t> >::iterator init,
+							 std::vector< std::vector<size_t> >::iterator end,
+							 size_t max)
+{
+	if ((end-init) == 1)
+	{
+		for (int i=0;i < init->size();++i)
+			if ( (*init)[i] <= max) return std::vector<size_t>(1,(*init)[i]);
+		return std::vector<size_t> ();
+	}
+
+	for (int i=0;i < init->size();++i)
+	{
+		size_t val = (*init)[i];
+		if (val > max) continue;
+
+		std::vector<size_t> r = maximize(init+1,end,max/val);
+		if (r.empty()) continue;
+
+		std::vector<size_t> ans (1,val);
+		std::copy(r.begin(),r.end(),std::back_inserter(ans));
+		return ans;
+	}
+	return std::vector<size_t>();
+}
 
 cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim)
 {
-	return cl::NullRange;
 	static std::vector<size_t> MaxDims = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
-	static int totMax = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+	static size_t totMax = CLContextLoader::getDevice().getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
 
+	typedef std::map<cl::NDRange,cl::NDRange> memo_map;
+	static memo_map memoing;
+
+	memo_map::iterator res = memoing.find(wsDim);
+	if ( res != memoing.end()) return res->second;
+
+	std::vector<std::vector<size_t> > v (wsDim.dimensions());
+	for (int i=0;i < wsDim.dimensions();++i)
+	{
+		std::vector<size_t> s = factor(wsDim[i]);
+		s.erase( std::upper_bound(s.begin(),s.end(),MaxDims[i]),s.end());
+		v[i] = s;
+	}
+
+	std::vector<size_t> dims = maximize(v.begin(),v.end(),totMax);
+
+	//OLD algorithm
+	/*
 	std::vector<size_t> dims (wsDim.dimensions());
 
 	std::transform(static_cast<const size_t*>(wsDim),static_cast<const size_t*>(wsDim)+wsDim.dimensions(),
@@ -40,19 +99,19 @@ cl::NDRange getBestWorkspaceDim(cl::NDRange wsDim)
 	int prod  = 1;
 	int cnt = 0;
 
-	for (int i=0;i < dims.size();++i) prod*=dims[i];
+	for (size_t i=0;i < dims.size();++i) prod*=dims[i];
 
 	while (prod > totMax)
 	{
 		dims[ (cnt++)%dims.size()]/=2;
 		prod /=2 ;
 	}
-
+*/
 	switch (dims.size())
 	{
-	case 1: return cl::NDRange(dims[0]);
-	case 2: return cl::NDRange(dims[0],dims[1]);
-	case 3: return cl::NDRange(dims[0],dims[1],dims[2]);
+	case 1: memoing.insert(std::make_pair(wsDim,cl::NDRange(dims[0]) ) );return cl::NDRange(dims[0]);
+	case 2: memoing.insert(std::make_pair(wsDim,cl::NDRange(dims[0],dims[1]) ) );return cl::NDRange(dims[0],dims[1]);
+	case 3: memoing.insert(std::make_pair(wsDim,cl::NDRange(dims[0],dims[1],dims[2]) ) );return cl::NDRange(dims[0],dims[1],dims[2]);
 	}
 	return cl::NullRange;
 }
@@ -94,38 +153,70 @@ real L2Norm(const Buffer2D & in,cl::CommandQueue & q)
 	return sqrt(res);
 }
 
+real L2Norm(const Buffer3D & in,cl::CommandQueue & q)
+{
+	cl::Buffer ans (CLContextLoader::getContext(),CL_MEM_READ_WRITE,sizeof(real)*in.width()*in.height()*in.depth());
+
+	CLContextLoader::getRedL2NormKer().setArg(0,in());
+	CLContextLoader::getRedL2NormKer().setArg(1,ans());
+
+	q.enqueueNDRangeKernel(CLContextLoader::getRedL2NormKer(),
+					cl::NDRange(0),
+					cl::NDRange(in.width()*in.height()*in.depth()),
+					getBestWorkspaceDim(cl::NDRange(in.width()*in.height()*in.depth())));
+
+	ans = performReduction(ans,CLContextLoader::getRedSumAllKer(),q,in.width()*in.height()*in.depth());
+
+	real res;
+	q.enqueueReadBuffer(ans,true,0,sizeof(real),&res);
+	return sqrt(res);
+}
+
+#ifdef _WIN32
+#define PACKED
+#else
+#define PACKED __attribute__ ((packed))
+#endif //_WIN32
+
+#pragma pack(push, 1)
+
+struct BitmapFileHeader
+{
+	uint16_t Signature;
+	uint32_t Size;
+	uint16_t Reserved1;
+	uint16_t Reserved2;
+	uint32_t BitsOffset;
+} PACKED fileHeader;
+
+struct BitmapInfoHeader
+{
+	uint32_t HeaderSize;
+	int32_t Width;
+	int32_t Height;
+	uint16_t Planes;
+	uint16_t BitCount;
+	uint32_t Compression;
+	uint32_t SizeImage;
+	int32_t PelsPerMeterX;
+	int32_t PelsPerMeterY;
+	uint32_t ClrUsed;
+	uint32_t ClrImportant;
+} PACKED infoHeader;
+
+#pragma pack(pop)
+
 Buffer2D fromBitmap(const char* filename)
 {
 	std::ifstream in (filename,std::ios::binary);
 	if (!in) throw std::runtime_error( std::string(filename)+ " Does not exists");
 
 	std::streampos init = in.tellg();
-	struct BitmapFileHeader
-	{
-		uint16_t Signature;
-		uint32_t Size;
-		uint16_t Reserved1;
-		uint16_t Reserved2;
-		uint32_t BitsOffset;
-	} __attribute__ ((packed)) fileHeader;
+
+	BitmapFileHeader fileHeader;
+	BitmapInfoHeader infoHeader;
 
 	assert(sizeof(BitmapFileHeader) == 14);
-
-	struct BitmapInfoHeader
-	{
-		uint32_t HeaderSize;
-		int32_t Width;
-		int32_t Height;
-		uint16_t Planes;
-		uint16_t BitCount;
-		uint32_t Compression;
-		uint32_t SizeImage;
-		int32_t PelsPerMeterX;
-		int32_t PelsPerMeterY;
-		uint32_t ClrUsed;
-		uint32_t ClrImportant;
-	} infoHeader;
-
 	assert(sizeof(BitmapInfoHeader) == 40);
 
 	const uint16_t BitmapSignature = 19778;
@@ -151,7 +242,7 @@ Buffer2D fromBitmap(const char* filename)
 
 	BidimArray<real> ans (w,h);
 	for (int i=0;i < h ;++i) for (int j=0;j < w;++j)
-		ans(j,i) = static_cast<int>(buf(j,i))/255.0;
+		ans(j,i) = static_cast<real>(buf(j,i))/255.0;
 	return Buffer2D(w,h,ans.data());
 }
 
@@ -162,32 +253,10 @@ void toBitmap(const Buffer2D& in,cl::CommandQueue & q, const char* filename)
 
 	BidimArray<real> ans = in.read(q);
 
-	struct BitmapFileHeader
-	{
-		uint16_t Signature;
-		uint32_t Size;
-		uint16_t Reserved1;
-		uint16_t Reserved2;
-		uint32_t BitsOffset;
-	} __attribute__ ((packed)) fileHeader;
+	BitmapFileHeader fileHeader;
+	BitmapInfoHeader infoHeader;
 
 	assert(sizeof(BitmapFileHeader) == 14);
-
-	struct BitmapInfoHeader
-	{
-		uint32_t HeaderSize;
-		int32_t Width;
-		int32_t Height;
-		uint16_t Planes;
-		uint16_t BitCount;
-		uint32_t Compression;
-		uint32_t SizeImage;
-		int32_t PelsPerMeterX;
-		int32_t PelsPerMeterY;
-		uint32_t ClrUsed;
-		uint32_t ClrImportant;
-	} infoHeader;
-
 	assert(sizeof(BitmapInfoHeader) == 40);
 
 	int dimx = in.width() + (4-in.width()%4)%4;

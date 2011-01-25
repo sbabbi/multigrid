@@ -3,7 +3,7 @@
 
 /* Border management **/
 typedef struct tagCell {
-	real2 _normals; //MUST BE L2 normalized
+	real4 _normals; //MUST BE L2 normalized. 4th parameter ignored
 }Cell;
 
 #define CELL_INSIDE 0x1
@@ -28,24 +28,28 @@ inline int isBorder(const __global read_only Cell * c)
 /*** Dumped jacobi iteratation ***/
 inline real jacobi_iteration(int base,
 							 int xsize,
+							 int xysize,
 							 global read_only real * src,
 							 global read_only real * func)
 {
-	return  0.25 * (
+	return  (1.0/6.0) * (
 		src[base +1] +
 		src[base -1] +
 		src[base + xsize] +
-		src[base - xsize] -
+		src[base - xsize] +
+		src[base + xysize] +
+		src[base - xysize] -
 		func[base] );
 }
 
 /*** Residuals ***/
 inline real residual(int base,
 					 int xsize,
+					 int xysize,
 					 global read_only real * src,
 					 global read_only real * func)
 {
-	return func[base] - (src[base +1] + src[base -1] + src[base + xsize] + src[base -xsize] - 4* src[base]);
+	return func[base] - (src[base +1] + src[base -1] + src[base + xsize] + src[base -xsize] + src[base + xysize] + src[base -xysize] - 6* src[base]);
 }
 
 /*** Do a red-black gauss seidel iteration ***/
@@ -54,13 +58,14 @@ void do_rbgauss(global read_only Cell * domain,
 			global read_only real * func,
 			real w,
 			int base,
-			int sizex)
+			int sizex,
+			int sizexy)
 {
 	real val;
 	switch (getCellType(domain+base) )
 	{
 		case CELL_INSIDE:
-			val = jacobi_iteration(base,sizex,dest,func);
+			val = jacobi_iteration(base,sizex,sizexy,dest,func);
 			dest[base] = val * w + (1.0-w)* dest[base];
 			break;
 		case CELL_OUTSIDE:
@@ -87,14 +92,17 @@ __kernel void iteration_kernel(global read_only Cell * domain,
 							global real * dest,
 							global read_only real * func,
 							real w,
-							int2 size,
-							int odd)
+							int4 size,
+							int odd1,
+							int odd2)
 {
-	int base = 2*get_global_id(0) + (odd+get_global_id(1))%2 + size.x*get_global_id(1);
+	int base = 2*get_global_id(0) + (odd1+get_global_id(1))%2 + size.x*get_global_id(1) +
+			size.y*size.x*(2*get_global_id(2)+odd2);
 
-	if (2*get_global_id(0) + (odd+get_global_id(1))%2 >= size.x) return;
+	if (2*get_global_id(0) + (odd1+get_global_id(1))%2 >= size.x ||
+			2*get_global_id(2)+odd2 >= size.z) return;
 
-	do_rbgauss(domain,dest,func,w,base,size.x);
+	do_rbgauss(domain,dest,func,w,base,size.x,size.x*size.y);
 }
 
 /*** residual_kernel
@@ -107,13 +115,14 @@ __kernel void residual_kernel(global read_only Cell * domain,
 								global read_only real * src,
 								global read_only real * func)
 {
-	int base = get_global_id(0) + get_global_size(0)*get_global_id(1);
+	int base = get_global_id(0) + get_global_size(0)*get_global_id(1)+get_global_id(2)*get_global_size(0)*get_global_size(1);
 	int sizex = get_global_size(0);
+	int sizexy = get_global_size(0)*get_global_size(1);
 
 	switch (getCellType(domain+base) )
 	{
 		case CELL_INSIDE:
-			dest[base] = residual(base,sizex,src,func);
+			dest[base] = residual(base,sizex,sizexy,src,func);
 			break;
 		case CELL_OUTSIDE:
 			break;
@@ -139,21 +148,47 @@ __kernel void residual_kernel(global read_only Cell * domain,
 __kernel void reduction_kernel(global read_only Cell * domain,
 								global write_only real * dest,
 								global read_only real * src,
-								int2 size)
+								int4 size)
 {
-	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
-	int sourcebase = get_global_id(0)*2 + size.x*(get_global_id(1)*2);
+	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1)+get_global_size(0)*get_global_size(1)*get_global_id(2);
+	int sourcebase = get_global_id(0)*2 + size.x*(get_global_id(1)*2) + size.x*size.y*(get_global_id(2)*2);
 
 	if (isBorder(domain+sourcebase) || isBorder(domain+sourcebase+1) ||
-		isBorder(domain+sourcebase+size.x) || isBorder(domain+sourcebase+size.x+1))
+		isBorder(domain+sourcebase+size.x) || isBorder(domain+sourcebase+size.x+1) ||
+		isBorder(domain+sourcebase+size.x*size.y) || isBorder(domain+sourcebase+size.x*size.y+1) ||
+		isBorder(domain+sourcebase+size.x*size.y+size.x) || isBorder(domain+sourcebase+size.x*size.y+1+size.x))
 	{
 		dest[destbase] = src[sourcebase];
 	}
 	else
 		dest[destbase] =
-			1.0/16.0 * ( src[sourcebase-size.x-1] + src[sourcebase-size.x+1] + src[sourcebase+size.x-1] + src[sourcebase+size.x+1]) +
-			1.0/8.0 * ( src[sourcebase-size.x] + src[sourcebase+1] + src[sourcebase-1] + src[sourcebase+size.x]) +
-			1.0/4.0 * (src[sourcebase]);
+			1.0/64.0 * ( src[sourcebase+size.x*size.y+size.x+1] +
+						src[sourcebase+size.x*size.y+size.x-1] +
+						src[sourcebase+size.x*size.y-size.x+1] +
+						src[sourcebase+size.x*size.y-size.x-1] +
+						src[sourcebase-size.x*size.y+size.x+1] +
+						src[sourcebase-size.x*size.y+size.x-1] +
+						src[sourcebase-size.x*size.y-size.x+1] +
+						src[sourcebase-size.x*size.y-size.x-1]) +
+			1.0/32.0 * (src[sourcebase+size.x+1] +
+						src[sourcebase+size.x-1] +
+						src[sourcebase-size.x+1] +
+						src[sourcebase-size.x-1] +
+						src[sourcebase-size.x*size.y+size.x] +
+						src[sourcebase-size.x*size.y-size.x] +
+						src[sourcebase-size.x*size.y+1] +
+						src[sourcebase-size.x*size.y-1] +
+						src[sourcebase+size.x*size.y+size.x] +
+						src[sourcebase+size.x*size.y-size.x] +
+						src[sourcebase+size.x*size.y+1] +
+						src[sourcebase+size.x*size.y-1] ) +
+			1.0/16.0 * ( src[sourcebase+size.x] +
+						src[sourcebase-size.x] +
+						src[sourcebase+1] +
+						src[sourcebase-1] +
+						src[sourcebase+size.x*size.y] +
+						src[sourcebase-size.x*size.y]) +
+			1.0/8.0 * (src[sourcebase]);
 }
 
 /*** residual_correct_kernel
@@ -169,10 +204,10 @@ __kernel void residual_correct_kernel(global read_only Cell * domain,
 										global read_only real * input,
 										global read_only real * err)
 {
-	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
-	int2 pos = (int2)(get_global_id(0)/2,get_global_id(1)/2);
-	int2 size = (int2)(get_global_size(0)/2 +1,get_global_size(1)/2+1);
-	int sourcebase = pos.x +pos.y*size.x;
+	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1)+get_global_size(0)*get_global_size(1)*get_global_id(2);
+	int4 pos = (int4)(get_global_id(0)/2,get_global_id(1)/2,get_global_id(2)/2,1);
+	int4 size = (int4)(get_global_size(0)/2 +1,get_global_size(1)/2+1,get_global_size(2)/2+1,1);
+	int sourcebase = pos.x +pos.y*size.x + pos.z*size.x*size.y;
 
 	real val;
 	if (isBorder(domain+destbase))
@@ -181,13 +216,19 @@ __kernel void residual_correct_kernel(global read_only Cell * domain,
 	{
 		real u = 0.5*(get_global_id(0)%2);
 		real w = 0.5*(get_global_id(1)%2);
+		real v = 0.5*(get_global_id(2)%2);
 
-		real4 n = (real4)( (1.0-u)*(1.0-w), (1.0-w)*u, (1.0-u)*w,w*u);
+		real4 n1 = (real4)( (1.0-u)*(1.0-w)*(1.0-v), (1.0-w)*u*(1.0-v), (1.0-u)*w*(1.0-v),w*u*(1.0-v));
+		real4 n2 = (real4)( (1.0-u)*(1.0-w)*v, (1.0-w)*u*v, (1.0-u)*w*v,w*u*v);
 
 		val = dot ((real4)( err[sourcebase],
 						err[sourcebase+1],
 						err[sourcebase+size.x],
-						err[sourcebase+size.x+1]),n);
+						err[sourcebase+size.x+1]),n1) +
+			dot ((real4)( err[sourcebase+size.x*size.y],
+						err[sourcebase+1+size.x*size.y],
+						err[sourcebase+size.x+size.x*size.y],
+						err[sourcebase+size.x+1+size.x*size.y]),n2);
 	}
 
 	dest [destbase] = input[destbase] + val*4;
@@ -198,33 +239,39 @@ __kernel void prolongation_kernel(global read_only Cell * domain,
 									global write_only real * dest,
 									global read_only real * input)
 {
-	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1);
-	int2 pos = (int2)(get_global_id(0)/2,get_global_id(1)/2);
-	int2 size = (int2)(get_global_size(0)/2 +1,get_global_size(1)/2+1);
+	int destbase = get_global_id(0)+get_global_size(0)*get_global_id(1)+get_global_size(0)*get_global_size(1)*get_global_id(2);
+	int4 pos = (int4)(get_global_id(0)/2,get_global_id(1)/2,get_global_id(2)/2,1);
+	int4 size = (int4)(get_global_size(0)/2 +1,get_global_size(1)/2+1,get_global_size(2)/2+1,1);
+	int sourcebase = pos.x +pos.y*size.x + pos.z*size.x*size.y;
 
 	real val;
 	if (isBorder(domain+destbase))
-		val = input[ pos.x + size.x * pos.y ];
+		val = input[sourcebase];
 	else
 	{
-		if (get_global_id(0)%2 == 0 && get_global_id(1) % 2 == 0)
-			val = input[pos.x + size.x*pos.y];
-		else if (get_global_id(0) % 2 == 0 && get_global_id(1) % 2 == 1)
-			val = 0.5*(input[pos.x + size.x*pos.y]+input[pos.x + size.x*(pos.y+1)]);
-		else if (get_global_id(0) % 2 == 1 && get_global_id(1) % 2 == 0)
-			val = 0.5*(input[pos.x + size.x*pos.y]+input[pos.x +1 + size.x*pos.y]);
-		else
-			val = 0.25*(input[pos.x + size.x*pos.y] + input[pos.x +size.x*(pos.y+1)] +
-				input[pos.x+1+size.x*(pos.y+1)]+input[pos.x+1+size.x*pos.y]);
-	}
+		real u = 0.5*(get_global_id(0)%2);
+		real w = 0.5*(get_global_id(1)%2);
+		real v = 0.5*(get_global_id(2)%2);
 
+		real4 n1 = (real4)( (1.0-u)*(1.0-w)*(1.0-v), (1.0-w)*u*(1.0-v), (1.0-u)*w*(1.0-v),w*u*(1.0-v));
+		real4 n2 = (real4)( (1.0-u)*(1.0-w)*v, (1.0-w)*u*v, (1.0-u)*w*v,w*u*v);
+
+		val = dot ((real4)( input[sourcebase],
+						input[sourcebase+1],
+						input[sourcebase+size.x],
+						input[sourcebase+size.x+1]),n1) +
+			dot ((real4)( input[sourcebase+size.x*size.y],
+						input[sourcebase+1+size.x*size.y],
+						input[sourcebase+size.x+size.x*size.y],
+						input[sourcebase+size.x+1+size.x*size.y]),n2);
+	}
 	dest[destbase] = val;
 }
 
 __kernel void zero_out(global read_only Cell * domain,
 						global write_only real * input)
 {
-	int base = get_global_id(0)+get_global_size(0)*get_global_id(1);
+	int base = get_global_id(0)+get_global_size(0)*get_global_id(1)+get_global_size(0)*get_global_size(1)*get_global_id(2);
 	if (getCellType(domain+base) == CELL_OUTSIDE)
 		input[base] = 0;
 }

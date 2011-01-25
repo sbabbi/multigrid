@@ -27,6 +27,10 @@
 #include <iomanip>
 #include <sstream>
 
+#ifndef M_PI
+#define M_PI 3.141592653589793238462643
+#endif //M_PI
+
 using namespace std;
 
 ProgramState::CommandTableEntry ProgramState::CommandTable[] =
@@ -42,40 +46,53 @@ ProgramState::CommandTableEntry ProgramState::CommandTable[] =
 	{"setvcycles",&ProgramState::setvcycles,"setvcycles: set the number of cycles for multigrid and FMG methods"},
 	{"save",&ProgramState::save,"save what filename: save (sol err res) to the output file \"filename\" "},
 	{"reduce",&ProgramState::reduce,"reduce what: reduce (sol err res)"},
+	{"prolongate",&ProgramState::prolongate,"prolongate what: prolongate (sol err res)"},
 	{"help",&ProgramState::help,"help: lists all the commands"}
 
 };
 
-float ones(float,float) {return 1;}
-float zeros(float,float) {return 0;}
+real ones(real,real) {return 1;}
+real zeros(real,real) {return 0;}
 
-float prettyFunc1(float x,float y)
+real prettyFunc1(real x,real y)
 {
 	return -2*( (1-6*x*x)*y*y*(1-y*y)+
 					(1-6*y*y)*x*x*(1-x*x));
 }
 
-float prettyFunc1Sol(float x,float y)
+real prettyFunc1Sol(real x,real y)
 {
 	return (x*x-x*x*x*x)*(y*y*y*y-y*y);
 }
 
-float prettyFunc2(float x,float y)
+real prettyFunc2(real x,real y)
 {
 	return exp(10*x)*cos(10*y);
 }
 
-float sinfunc1(float x,float y)
+real sinfunc1(real x,real y)
 {
 	return -M_PI*M_PI*2* sin(M_PI*x)*sin(M_PI*y);
 }
 
-float sinfunc1sol(float x,float y)
+real sinfunc1sol(real x,real y)
 {
 	return sin(M_PI*x)*sin(M_PI*y);
 }
 
-float charge(float x,float y)
+real sinfunc2(real x,real y)
+{
+	return -26*26*M_PI*M_PI*sin( 26*M_PI*x) -
+		50*50*M_PI*M_PI*cos(50*M_PI*y)-
+		M_PI*M_PI*sin(M_PI*x);
+}
+
+real sinfunc2sol(real x,real y)
+{
+	return sin(M_PI*26*x)+ cos (M_PI*50*y)+ sin(M_PI*x);
+}
+
+real charge(real x,real y)
 {
 	if (x == 0.5 && y == 0.5) return 1;
 	if (x == 0.25 && y == 0.25) return 1;
@@ -83,6 +100,13 @@ float charge(float x,float y)
 	if (x == 0.75 && y == 0.25) return 1;
 	if (x == 0.75 && y == 0.75) return 1;
 	return 0;
+}
+
+real ones3D(real x,real y,real z) {return 1;}
+real zeros3D(real x,real y,real z) {return 0;}
+real triDimFuncSol1(real x,real y,real z)
+{
+	return exp(sqrt(2)*M_PI*x)*sin(M_PI*y)*cos(M_PI*z);
 }
 
 std::ostream& operator<<(std::ostream & os,const BidimArray<real> & m)
@@ -96,10 +120,25 @@ std::ostream& operator<<(std::ostream & os,const BidimArray<real> & m)
 	return os;
 }
 
+std::ostream& operator<<(std::ostream & os,const TridimArray<real> & m)
+{
+	for (int k=0;k < m.depth();++k)
+	{
+		for (int i=0;i < m.width();++i)
+		{
+			for (int j=0;j < m.height();++j)
+				os << m(i,j,k) << " ";
+			os << std::endl;
+		}
+		os << std::endl;
+	}
+	return os;
+}
+
 ProgramState::ProgramState(int argc, char** argv) :
 	m_curMode(Fmg),
-	m_dimx(16),
-	m_dimy(16),
+	m_dimx(17),
+	m_dimy(17),
 	stepA1(3),
 	stepA2(3),
 	VCycles(2),
@@ -108,10 +147,20 @@ ProgramState::ProgramState(int argc, char** argv) :
 	m_bDisplayResidual(false),
 	m_bDisplayError(false),
 	m_bProfilingMode(false),
+
+#ifdef BIDIM
 	m_solver("mg_0.cl",m_handler),
+	m_funcHandler(sinfunc2,sinfunc2sol,sinfunc2sol)
+#else
+	m_solver("mg_1.cl",m_handler),
+	m_dimz(17),
+	m_funcHandler(zeros3D,triDimFuncSol1,triDimFuncSol1)
+#endif //BIDIM
 // 	m_funcHandler(charge,zeros)
-	m_funcHandler(prettyFunc1,zeros,prettyFunc1Sol)
+// 	m_funcHandler(prettyFunc1,zeros,prettyFunc1Sol)
+// 	m_funcHandler(sinfunc2,sinfunc2sol,sinfunc2sol)
 // 	m_funcHandler(zeros,prettyFunc2,prettyFunc2)
+
 {
 	for (int i=0;i < argc;++i)
 	{
@@ -132,6 +181,7 @@ ProgramState::ProgramState(int argc, char** argv) :
 		}
 		else if(string(argv[i]) == "--dim")
 		{
+#ifdef BIDIM
 			m_dimx = atoi(argv[++i]);
 			m_dimy = atoi(argv[++i]);
 			if (m_dimx <=0 || m_dimy <= 0)
@@ -139,6 +189,16 @@ ProgramState::ProgramState(int argc, char** argv) :
 				cout << "Dimensions not valid" << endl;
 				exit(1);
 			}
+#else
+			m_dimx = atoi(argv[++i]);
+			m_dimy = atoi(argv[++i]);
+			m_dimz = atoi(argv[++i]);
+			if (m_dimx <=0 || m_dimy <= 0 || m_dimz <= 0)
+			{
+				cout << "Dimensions not valid" << endl;
+				exit(1);
+			}
+#endif //BIDIM
 		}
 		else if(string(argv[i]) == "--smoothsteps")
 		{
@@ -185,8 +245,6 @@ ProgramState::ProgramState(int argc, char** argv) :
 			abort();
 		}
 	}
-
-// 	m_solver.m_debugPrintResiduals = true;
 }
 
 void ProgramState::listenCommand()
@@ -227,11 +285,23 @@ void ProgramState::listenCommand()
 void ProgramState::setdim( std::istream & params)
 {
 	int newdimx,newdimy;
+
+#ifdef BIDIM
 	params >> newdimx >> newdimy;
+
 	if (params.fail() || newdimx < 0 || newdimy < 0)
 		cout << "Invalid dimensions" << endl;
 	else
 		m_dimx = newdimx,m_dimy = newdimy;
+#else
+	int newdimz;
+	params >> newdimx >> newdimy >> newdimz;
+
+	if (params.fail() || newdimx < 0 || newdimy < 0 || newdimz < 0)
+		cout << "Invalid dimensions" << endl;
+	else
+		m_dimx = newdimx,m_dimy = newdimy,m_dimz = newdimz;
+	#endif //BIDIM
 }
 
 void ProgramState::setsmoothsteps(istream& params)
@@ -352,7 +422,7 @@ void ProgramState::save(istream& params)
 	params >> what >> filename;
 	if (params.fail()) cout << "Save what where?" << endl;
 
-	Buffer2D * arg =0;
+	Buffer * arg =0;
 	if (what == "err") arg = &m_error;
 	else if (what == "res") arg = &m_residual;
 	else if (what == "sol") arg = &m_solution;
@@ -370,14 +440,19 @@ void ProgramState::save(istream& params)
 	}
 
 	if (filename.size() > 4 && filename.substr( filename.size()-3) == "bmp")
+	{
+#ifdef BIDIM
 		toBitmap(*arg,m_solver.queue(),filename.c_str());
+#else
+		cout << "Saving to bitmap not supported in 3D." << endl;
+#endif //BIDIM
+	}
 	else
 	{
-		BidimArray< ::real> ans = arg->read(m_solver.queue());
 		ofstream outfile(filename.c_str());
 		if (!outfile) cout << "Can not open: " << filename << endl;
 		else
-			outfile << ans << endl;
+			outfile << arg->read(m_solver.queue()) << endl;
 	}
 }
 
@@ -386,7 +461,7 @@ void ProgramState::reduce(istream& params)
 	string what;
 	params >> what;
 
-	Buffer2D * p = 0;
+	Buffer * p = 0;
 	if (cin.fail()) cout << "reduce what?" << endl;
 	else if (what == "sol")
 	{
@@ -417,20 +492,77 @@ void ProgramState::reduce(istream& params)
 
 	if (p)
 	{
-		Buffer2D s (p->width()/2+1,p->height()/2+1);
+#ifdef BIDIM
+		Buffer s (p->width()/2+1,p->height()/2+1);
+#else
+		Buffer s (p->width()/2+1,p->height()/2+1,p->depth()/2+1);
+#endif //BIDIM
 		m_solver.restrict(s,*p);
 		*p = s;
 	}
 }
 
+void ProgramState::prolongate(istream& params)
+{
+	string what;
+	params >> what;
+
+	Buffer * p = 0;
+	if (cin.fail()) cout << "prolongate what?" << endl;
+	else if (what == "sol")
+	{
+		if (m_solution.isInitialized())
+			p = &m_solution;
+		else
+			cout << "No solution available" << endl;
+	} else if (what == "res")
+	{
+		if (m_residual.isInitialized())
+			p = &m_residual;
+		else
+			cout << "No residuals available" << endl;
+	} else if (what == "err")
+	{
+		if (m_error.isInitialized())
+			p = &m_error;
+		else
+			cout << "No error available" << endl;
+	} else if (what == "func")
+	{
+		if (m_targetFunction.isInitialized())
+			p = &m_targetFunction;
+		else
+			cout << "No function available" << endl;
+	}
+	else cout << "Prolongate what?" << endl;
+
+	if (p)
+	{
+#ifdef BIDIM
+		Buffer s (p->width()*2-1,p->height()*2-1);
+#else
+		Buffer s (p->width()*2-1,p->height()*2-1,p->depth()*2-1);
+#endif //BIDIM
+		m_solver.prolongate(s,*p);
+		*p = s;
+	}
+}
 
 void ProgramState::solve(std::istream & is)
 {
+#ifdef BIDIM
 	m_targetFunction = m_funcHandler.discretize_func(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler);
-	Buffer2D emptyBuf = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
-	m_solution = Buffer2D::empty(m_dimx,m_dimy,m_solver.queue());
-	m_residual = Buffer2D(m_dimx,m_dimy);
-	m_error = Buffer2D(m_dimx,m_dimy);
+	Buffer emptyBuf = Buffer::empty(m_dimx,m_dimy,m_solver.queue());
+	m_solution = Buffer::empty(m_dimx,m_dimy,m_solver.queue());
+	m_residual = Buffer(m_dimx,m_dimy);
+	m_error = Buffer(m_dimx,m_dimy);
+#else
+	m_targetFunction = m_funcHandler.discretize_func(m_dimx,m_dimy,m_dimz,1.0/(m_dimx-1),m_handler);
+	Buffer emptyBuf = Buffer::empty(m_dimx,m_dimy,m_dimz,m_solver.queue());
+	m_solution = Buffer::empty(m_dimx,m_dimy,m_dimz,m_solver.queue());
+	m_residual = Buffer(m_dimx,m_dimy,m_dimz);
+	m_error = Buffer(m_dimx,m_dimy,m_dimz);
+#endif //BIDIM
 
 	clock_t startTimer = clock();
 
@@ -462,11 +594,14 @@ void ProgramState::solve(std::istream & is)
 	m_solver.zero_out(m_solution);
 
 	if (m_funcHandler.hasSol())
+#ifdef BIDIM
 		m_error = Difference(m_solution, m_funcHandler.discretize_sol(m_dimx,m_dimy,1.0/(m_dimx-1),m_handler),m_solver.queue());
+#else
+		m_error = Difference(m_solution, m_funcHandler.discretize_sol(m_dimx,m_dimy,m_dimz,1.0/(m_dimx-1),m_handler),m_solver.queue());
+#endif //BIDIM
+
 	m_solver.compute_residuals(m_residual,m_solution,m_targetFunction);
 	m_solver.wait();
-
-	toBitmap(m_solution,m_solver.queue(),"test_out.bmp");
 
 	clock_t endTimer = clock();
 
