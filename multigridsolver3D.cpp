@@ -83,7 +83,8 @@ Buffer3D MultigridSolver3D::fmg(const Buffer3D& func,
 								   real omega,
 								   int a1,
 								   int a2,
-								   int v)
+								   int v,
+								   int iters)
 {
 	if (!(func.width() > 3 && func.height() > 3 && func.depth() > 3))
 	{
@@ -91,7 +92,7 @@ Buffer3D MultigridSolver3D::fmg(const Buffer3D& func,
 		Buffer3D x0 (func.width(),func.height(),func.depth());
 		zero_mem(x0);
 
-		return iterate(x0,func,omega,a1,a2,v);
+		return mg(x0,func,omega,a1,a2,v,iters);
 	}
 
 	Buffer3D red_func ( (func.width()+1)/2,(func.height()+1)/2,(func.depth()+1)/2);
@@ -104,7 +105,7 @@ Buffer3D MultigridSolver3D::fmg(const Buffer3D& func,
 	Buffer3D x0 (func.width(),func.height(),func.depth());
 	prolongate(x0,iGuess);
 
-	return iterate(x0,func,omega,a1,a2,v);
+	return mg(x0,func,omega,a1,a2,v,iters);
 }
 
 void MultigridSolver3D::smoother_iterate(Buffer3D& res, const Buffer3D& func, real omega, int a1)

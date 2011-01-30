@@ -54,6 +54,7 @@ private:
 	void setmode( std::istream & params);
 	void setvcycles( std::istream & params);
 	void setomega( std::istream & params);
+	void setiterations( std::istream & params);
 	void state( std::istream & params);
 	void print( std::istream & params);
 	void quit( std::istream & params);
@@ -72,7 +73,7 @@ private:
 	int m_dimz;
 #endif //BIDIM
 
-	int stepA1,stepA2,VCycles;
+	int stepA1,stepA2,VCycles,iterations;
 	real m_omega;
 	bool m_bDisplaySolution,m_bDisplayResidual,m_bDisplayError;
 	bool m_bProfilingMode;

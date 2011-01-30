@@ -44,6 +44,7 @@ ProgramState::CommandTableEntry ProgramState::CommandTable[] =
 	{"setomega",&ProgramState::setomega,"setomega o: sets the omega parameter for every smoother"},
 	{"state",&ProgramState::state,"state: prints the current state of the solver"},
 	{"setvcycles",&ProgramState::setvcycles,"setvcycles: set the number of cycles for multigrid and FMG methods"},
+	{"setiterations",&ProgramState::setiterations,"setiterations: sets the number of iterations in a mg or fmg solver"},
 	{"save",&ProgramState::save,"save what filename: save (sol err res) to the output file \"filename\" "},
 	{"reduce",&ProgramState::reduce,"reduce what: reduce (sol err res)"},
 	{"prolongate",&ProgramState::prolongate,"prolongate what: prolongate (sol err res)"},
@@ -143,6 +144,7 @@ ProgramState::ProgramState(int argc, char** argv) :
 	stepA2(3),
 	VCycles(2),
 	m_omega(1.0),
+	iterations(3),
 	m_bDisplaySolution(false),
 	m_bDisplayResidual(false),
 	m_bDisplayError(false),
@@ -235,6 +237,15 @@ ProgramState::ProgramState(int argc, char** argv) :
 			if (m_omega < 0 || m_omega >= 2)
 			{
 				cout << "Invalid omega" << endl;
+				exit(1);
+			}
+		}
+		else if(string(argv[i]) == "--iterations")
+		{
+			iterations = atoi(argv[++i]);
+			if (iterations < 0)
+			{
+				cout << "Invalid iterations" << endl;
 				exit(1);
 			}
 		}
@@ -348,6 +359,16 @@ void ProgramState::setomega( std::istream & params)
 		cout << "Invalid omega" << endl;
 	else
 		m_omega = omega;
+}
+
+void ProgramState::setiterations(std::istream& params)
+{
+	int iters;
+	params >> iters;
+	if (params.fail() || iters < 0)
+		cout << "Invalid iterations" << endl;
+	else
+		iterations = iters;
 }
 
 void ProgramState::state( std::istream & params)
@@ -573,7 +594,8 @@ void ProgramState::solve(std::istream & is)
 						m_omega,
 						stepA1,
 						stepA2,
-						VCycles);
+						VCycles,
+						iterations);
 		break;
 	case Smooth:
 		m_solver.smoother_iterate(m_solution,
@@ -582,12 +604,13 @@ void ProgramState::solve(std::istream & is)
 								  stepA1);
 		break;
 	case Multigrid:
-		m_solver.iterate(m_solution,
+		m_solver.mg(m_solution,
 						 m_targetFunction,
 						 m_omega,
 						 stepA1,
 						 stepA2,
-						 VCycles);
+						 VCycles,
+						 iterations);
 		break;
 
 	}

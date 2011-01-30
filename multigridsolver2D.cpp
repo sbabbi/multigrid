@@ -98,7 +98,8 @@ Buffer2D MultigridSolver2D::fmg(const Buffer2D& func,
 								   real omega,
 								   int a1,
 								   int a2,
-								   int v)
+								   int v,
+								   int iters)
 {
 	if (!(func.width() > 3 && func.height() > 3))
 	{
@@ -106,7 +107,7 @@ Buffer2D MultigridSolver2D::fmg(const Buffer2D& func,
 		Buffer2D x0 (func.width(),func.height());
 		zero_mem(x0);
 
-		return iterate(x0,func,omega,a1,a2,v);
+		return mg(x0,func,omega,a1,a2,v,iters);
 	}
 
 	Buffer2D red_func ( (func.width()+1)/2,(func.height()+1)/2);
@@ -119,7 +120,7 @@ Buffer2D MultigridSolver2D::fmg(const Buffer2D& func,
 	Buffer2D x0 (func.width(),func.height());
 	prolongate(x0,iGuess);
 
-	return iterate(x0,func,omega,a1,a2,v);
+	return mg(x0,func,omega,a1,a2,v,iters);
 }
 
 void MultigridSolver2D::smoother_iterate(Buffer2D& res, const Buffer2D& func, real omega, int a1)

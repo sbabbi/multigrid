@@ -46,11 +46,24 @@ public:
 					 int a2 = 4,
 					 int v = 1);
 
+	Buffer2D mg(Buffer2D & in,
+					const Buffer2D & func,
+					 real omega = 2.0/3.0,
+					 int a1 = 4,
+					 int a2 = 4,
+					 int v = 1,
+					 int iters = 3) {
+		for (int i=0;i < iters;++i)
+			iterate(in,func,omega,a1,a2,v);
+		return in;
+	}
+
 	Buffer2D fmg(const Buffer2D & func,
 			real omega = 2.0/3.0,
 			int a1 = 4,
 			int a2 = 4,
-			int v = 1);
+			int v = 1,
+			int iters = 3);
 
 	void wait() { m_queue.finish();}
 
