@@ -31,6 +31,13 @@ CLContextLoader::CLContextLoader()
 	//Load platform
 	std::vector<cl::Platform> platforms;
 	cl::Platform::get(&platforms);
+	
+	if (platforms.size() > 1 )
+	{
+		std::cout << "Found multiple platforms: " << std::endl;
+		for (int i = 0; i < platforms.size(); ++i)
+			std::cout << platforms[i].getInfo< CL_PLATFORM_NAME >() << std::endl;
+	}
 
 	if (platforms.size() == 0) throw std::runtime_error("No platforms found");
 	m_platform = platforms[0];
@@ -38,9 +45,18 @@ CLContextLoader::CLContextLoader()
 	//Load device
 	std::vector<cl::Device> devices;
 	m_platform.getDevices(CL_DEVICE_TYPE_CPU | CL_DEVICE_TYPE_GPU,&devices);
+	
+	if (devices.size() > 1 )
+	{
+		std::cout << "Found multiple devices: " << std::endl;
+		for ( int i = 0; i < devices.size(); ++i)
+			std::cout << devices[i].getInfo< CL_DEVICE_NAME >() << std::endl;
+	}
 
 	if (devices.size() == 0) throw std::runtime_error("No devices found");
 	m_device = devices[0];
+	
+	std::cout << "Picking device: " << m_device.getInfo< CL_DEVICE_NAME >() << std::endl;
 
 	cl_context_properties propp [] = {
 		CL_CONTEXT_PLATFORM, reinterpret_cast<cl_context_properties>(m_platform()),

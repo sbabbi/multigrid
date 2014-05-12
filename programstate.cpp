@@ -110,6 +110,17 @@ real triDimFuncSol1(real x,real y,real z)
 	return exp(sqrt(2)*M_PI*x)*sin(M_PI*y)*cos(M_PI*z);
 }
 
+
+real tridimF1( real x, real y, real z)
+{
+	return -3.0 * M_PI * M_PI * sin( M_PI * x) * sin( M_PI * y) * sin( M_PI * z);
+}
+
+real tridimS1( real x, real y, real z)
+{
+	return sin( M_PI * x) * sin( M_PI * y) * sin( M_PI * z);
+}
+
 std::ostream& operator<<(std::ostream & os,const BidimArray<real> & m)
 {
 	for (int i=0;i < m.width();++i)
@@ -156,7 +167,7 @@ ProgramState::ProgramState(int argc, char** argv) :
 #else
 	m_solver("mg_1.cl",m_handler),
 	m_dimz(17),
-	m_funcHandler(zeros3D,triDimFuncSol1,triDimFuncSol1)
+	m_funcHandler(tridimF1,tridimS1,tridimS1)
 #endif //BIDIM
 // 	m_funcHandler(charge,zeros)
 // 	m_funcHandler(prettyFunc1,zeros,prettyFunc1Sol)
